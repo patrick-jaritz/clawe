@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@clawe/backend";
 import {
@@ -216,57 +216,69 @@ export const TaskDetailModal = ({
                   />
                 </div>
 
-                {subtasksOpen && <ul className="space-y-1">
-                  {task.subtasks.map((subtask) => {
-                    const status =
-                      subtask.status ?? (subtask.done ? "done" : "pending");
-                    return (
-                      <li
-                        key={subtask.id}
-                        className={cn(
-                          "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm",
-                          status === "done" && "text-muted-foreground",
-                          status === "blocked" &&
-                            "bg-red-50 dark:bg-red-950/20",
-                          (status === "pending" || status === "in_progress") &&
-                            "text-gray-800 dark:text-gray-200",
-                        )}
-                      >
-                        <div className="shrink-0">
-                          {status === "done" && (
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                {subtasksOpen && (
+                  <ul className="space-y-1">
+                    {task.subtasks.map((subtask) => {
+                      const status =
+                        subtask.status ?? (subtask.done ? "done" : "pending");
+                      return (
+                        <li
+                          key={subtask.id}
+                          className={cn(
+                            "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm",
+                            status === "done" && "text-muted-foreground",
+                            status === "blocked" &&
+                              "bg-red-50 dark:bg-red-950/20",
+                            (status === "pending" ||
+                              status === "in_progress") &&
+                              "text-gray-800 dark:text-gray-200",
                           )}
-                          {status === "in_progress" && (
-                            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                          )}
-                          {status === "blocked" && (
-                            <AlertTriangle className="h-4 w-4 text-red-500" />
-                          )}
-                          {status === "pending" && (
-                            <Circle className="text-muted-foreground h-4 w-4" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span
-                            className={cn("truncate block", status === "done" ? "line-through" : "")}
-                          >
-                            {subtask.title}
-                          </span>
-                          {status === "blocked" && subtask.blockedReason && (
-                            <p className="mt-0.5 text-xs text-red-600 dark:text-red-400 truncate">
-                              {subtask.blockedReason}
-                            </p>
-                          )}
-                        </div>
-                        <div className="shrink-0 text-right text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
-                          {subtask.assignee && <span>{subtask.assignee}</span>}
-                          {subtask.assignee && subtask.doneAt && <span> · </span>}
-                          {subtask.doneAt && <span>{timeAgo(subtask.doneAt)}</span>}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>}
+                        >
+                          <div className="shrink-0">
+                            {status === "done" && (
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            )}
+                            {status === "in_progress" && (
+                              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                            )}
+                            {status === "blocked" && (
+                              <AlertTriangle className="h-4 w-4 text-red-500" />
+                            )}
+                            {status === "pending" && (
+                              <Circle className="text-muted-foreground h-4 w-4" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span
+                              className={cn(
+                                "block truncate",
+                                status === "done" ? "line-through" : "",
+                              )}
+                            >
+                              {subtask.title}
+                            </span>
+                            {status === "blocked" && subtask.blockedReason && (
+                              <p className="mt-0.5 truncate text-xs text-red-600 dark:text-red-400">
+                                {subtask.blockedReason}
+                              </p>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right text-xs whitespace-nowrap text-gray-400 dark:text-gray-500">
+                            {subtask.assignee && (
+                              <span>{subtask.assignee}</span>
+                            )}
+                            {subtask.assignee && subtask.doneAt && (
+                              <span> · </span>
+                            )}
+                            {subtask.doneAt && (
+                              <span>{timeAgo(subtask.doneAt)}</span>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             )}
 

@@ -51,9 +51,11 @@ function mapTask(task: TaskWithAssignees): KanbanTask {
       done: st.done || false,
       status: st.status ?? (st.done ? "done" : "pending"),
       blockedReason: st.blockedReason,
-      assignee: st.assignee
-        ? `${st.assignee.emoji || ""} ${st.assignee.name}`.trim()
-        : undefined,
+      assignee: (() => {
+        if (!st.assigneeId) return undefined;
+        const agent = task.assignees?.find((a) => a._id === st.assigneeId);
+        return agent ? `${agent.emoji || ""} ${agent.name}`.trim() : undefined;
+      })(),
       doneAt: st.doneAt,
     })) || [];
 

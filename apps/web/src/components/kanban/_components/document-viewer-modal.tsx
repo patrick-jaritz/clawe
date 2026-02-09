@@ -18,27 +18,39 @@ const VIEWER_HEIGHT = "h-[500px]";
 
 /** Very simple markdown → HTML renderer for preview mode */
 function renderMarkdown(md: string): string {
-  let html = md
+  const html = md
     // Escape HTML
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     // Headers
-    .replace(/^#### (.+)$/gm, '<h4 class="text-sm font-semibold mt-4 mb-1">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-5 mb-1.5">$1</h3>')
+    .replace(
+      /^#### (.+)$/gm,
+      '<h4 class="text-sm font-semibold mt-4 mb-1">$1</h4>',
+    )
+    .replace(
+      /^### (.+)$/gm,
+      '<h3 class="text-base font-semibold mt-5 mb-1.5">$1</h3>',
+    )
     .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-6 mb-2">$1</h2>')
     .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-6 mb-2">$1</h1>')
     // Bold & italic
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     // Inline code
-    .replace(/`([^`]+)`/g, '<code class="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-zinc-800">$1</code>')
+    .replace(
+      /`([^`]+)`/g,
+      '<code class="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-zinc-800">$1</code>',
+    )
     // Unordered lists
     .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
     // Ordered lists
     .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
     // Horizontal rules
-    .replace(/^---$/gm, '<hr class="my-4 border-gray-200 dark:border-zinc-700" />')
+    .replace(
+      /^---$/gm,
+      '<hr class="my-4 border-gray-200 dark:border-zinc-700" />',
+    )
     // Paragraphs (double newlines)
     .replace(/\n\n/g, '</p><p class="mb-2">')
     // Single newlines within paragraphs
@@ -119,7 +131,7 @@ export const DocumentViewerModal = ({
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    "rounded-r-none border-r border-gray-200 dark:border-zinc-700 h-8 px-3 text-xs",
+                    "h-8 rounded-r-none border-r border-gray-200 px-3 text-xs dark:border-zinc-700",
                     viewMode === "preview" && "bg-gray-100 dark:bg-zinc-800",
                   )}
                   onClick={() => setViewMode("preview")}
@@ -130,7 +142,7 @@ export const DocumentViewerModal = ({
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    "rounded-l-none h-8 px-3 text-xs",
+                    "h-8 rounded-l-none px-3 text-xs",
                     viewMode === "raw" && "bg-gray-100 dark:bg-zinc-800",
                   )}
                   onClick={() => setViewMode("raw")}

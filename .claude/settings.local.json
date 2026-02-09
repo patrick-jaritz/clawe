@@ -33,7 +33,9 @@
       "Bash(git -C /home/ubuntu/clawe log:*)",
       "Bash(pnpm --filter web test:*)",
       "Bash(npx prettier:*)",
-      "Bash(pnpm --filter @clawe/cli test:*)"
+      "Bash(pnpm --filter @clawe/cli test:*)",
+      "Bash(pnpm ls:*)",
+      "Bash(pnpm fix:*)"
     ]
   }
 }
