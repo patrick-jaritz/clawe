@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { useMutation as useConvexMutation } from "convex/react";
@@ -9,13 +10,27 @@ import { Input } from "@clawe/ui/components/input";
 import { Label } from "@clawe/ui/components/label";
 import { Progress } from "@clawe/ui/components/progress";
 import { Spinner } from "@clawe/ui/components/spinner";
-import { CheckCircle2, MessageCircle, Copy, Check } from "lucide-react";
+import {
+  CheckCircle2,
+  MessageCircle,
+  Copy,
+  Check,
+  AlertTriangle,
+} from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@clawe/ui/components/tooltip";
+import { useAgencyStatus } from "@/hooks/use-agency-status";
 import { api } from "@clawe/backend";
 import {
   validateTelegramToken,
   saveTelegramBotToken,
   approvePairingCode,
 } from "@/lib/openclaw/actions";
+import { SetupRightPanelContent } from "../_components/setup-right-panel";
+import { DemoVideo } from "./_components/demo-video";
 
 const TOTAL_STEPS = 4;
 const CURRENT_STEP = 3;
@@ -24,6 +39,8 @@ type Step = "token" | "pairing" | "success";
 
 export default function TelegramPage() {
   const router = useRouter();
+  const { status, isLoading } = useAgencyStatus();
+  const isOffline = !isLoading && status === "down";
   const [step, setStep] = useState<Step>("token");
   const [botToken, setBotToken] = useState("");
   const [botUsername, setBotUsername] = useState<string | null>(null);
@@ -142,7 +159,7 @@ export default function TelegramPage() {
     return (
       <form onSubmit={handlePairingSubmit} className="flex flex-1 flex-col">
         <div className="max-w-xl flex-1">
-          <div className="mb-8 sm:mb-12">
+          <div className="mb-6 sm:mb-8">
             <Progress
               value={(CURRENT_STEP / TOTAL_STEPS) * 100}
               className="h-1 w-full max-w-sm"
@@ -150,19 +167,19 @@ export default function TelegramPage() {
             />
           </div>
 
-          <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-            <MessageCircle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
+            <MessageCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           </div>
 
-          <h1 className="mb-3 text-2xl font-semibold tracking-tight sm:text-3xl">
+          <h1 className="mb-2 text-2xl font-semibold tracking-tight sm:text-3xl">
             Pair Your Account
           </h1>
-          <p className="text-muted-foreground mb-8">
+          <p className="text-muted-foreground mb-5">
             Send a message to your bot on Telegram to receive a pairing code.
           </p>
 
           {/* Instructions */}
-          <div className="bg-muted/50 mb-6 space-y-4 rounded-lg p-4">
+          <div className="bg-muted/50 mb-5 space-y-3 rounded-lg p-4">
             <div className="flex items-start gap-3">
               <span className="bg-muted flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm font-medium">
                 1
@@ -210,8 +227,25 @@ export default function TelegramPage() {
             </div>
           </div>
 
+          {/* Offline warning */}
+          {isOffline && (
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/30">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+                <div>
+                  <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                    OpenClaw is offline
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-500">
+                    The agent service needs to be running to verify pairing.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Pairing code input */}
-          <div className="space-y-6">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="pairing-code">Pairing Code</Label>
               <Input
@@ -222,6 +256,7 @@ export default function TelegramPage() {
                 onChange={(e) => setPairingCode(e.target.value.toUpperCase())}
                 maxLength={8}
                 className="font-mono tracking-widest uppercase"
+                disabled={isOffline}
               />
             </div>
 
@@ -239,25 +274,40 @@ export default function TelegramPage() {
             variant="ghost"
             className="w-full sm:w-auto"
             onClick={handleSkip}
-            disabled={pairingMutation.isPending}
+            disabled={isOffline || pairingMutation.isPending}
           >
             Skip for now
           </Button>
-          <Button
-            type="submit"
-            variant="brand"
-            className="w-full sm:w-auto"
-            disabled={pairingCode.length < 8 || pairingMutation.isPending}
-          >
-            {pairingMutation.isPending ? (
-              <>
-                <Spinner />
-                Verifying...
-              </>
-            ) : (
-              "Verify Code"
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={isOffline ? "cursor-not-allowed" : ""}>
+                <Button
+                  type="submit"
+                  variant="brand"
+                  className="w-full sm:w-auto"
+                  disabled={
+                    isOffline ||
+                    pairingCode.length < 8 ||
+                    pairingMutation.isPending
+                  }
+                >
+                  {pairingMutation.isPending ? (
+                    <>
+                      <Spinner />
+                      Verifying...
+                    </>
+                  ) : (
+                    "Verify Code"
+                  )}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {isOffline && (
+              <TooltipContent>
+                <p>Start OpenClaw to continue</p>
+              </TooltipContent>
             )}
-          </Button>
+          </Tooltip>
         </div>
       </form>
     );
@@ -266,8 +316,16 @@ export default function TelegramPage() {
   // Token step (default)
   return (
     <form onSubmit={handleTokenSubmit} className="flex flex-1 flex-col">
+      <SetupRightPanelContent>
+        <div className="relative flex h-full items-center justify-center overflow-hidden">
+          <Image src="/telegram-bg.png" alt="" fill className="object-cover" />
+          <div className="relative z-10">
+            <DemoVideo />
+          </div>
+        </div>
+      </SetupRightPanelContent>
       <div className="max-w-xl flex-1">
-        <div className="mb-8 sm:mb-12">
+        <div className="mb-6 sm:mb-8">
           <Progress
             value={(CURRENT_STEP / TOTAL_STEPS) * 100}
             className="h-1 w-full max-w-sm"
@@ -275,35 +333,106 @@ export default function TelegramPage() {
           />
         </div>
 
-        <h1 className="mb-3 text-2xl font-semibold tracking-tight sm:text-3xl">
+        <h1 className="mb-2 text-2xl font-semibold tracking-tight sm:text-3xl">
           Connect Telegram
         </h1>
-        <p className="text-muted-foreground mb-8">
-          Enter your Telegram bot token to start receiving messages.
+        <p className="text-muted-foreground mb-5">
+          Create a Telegram bot and connect it to Clawe so your AI agents can
+          receive and respond to messages.
         </p>
 
-        <div className="space-y-6">
+        {/* How to get your bot token */}
+        <div className="mb-5">
+          <h2 className="mb-3 text-sm font-medium">
+            How to get your bot token?
+          </h2>
+          <ol className="space-y-2">
+            <li className="flex items-start gap-3">
+              <span className="bg-muted text-muted-foreground flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+                1
+              </span>
+              <p className="text-muted-foreground text-sm">
+                Open Telegram and go to{" "}
+                <a
+                  href="https://t.me/BotFather"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-foreground font-medium underline underline-offset-2"
+                >
+                  @BotFather
+                </a>
+                .
+              </p>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="bg-muted text-muted-foreground flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+                2
+              </span>
+              <p className="text-muted-foreground text-sm">
+                Start a chat and type{" "}
+                <code className="bg-muted rounded px-1.5 py-0.5 text-xs font-medium">
+                  /newbot
+                </code>
+                .
+              </p>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="bg-muted text-muted-foreground flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+                3
+              </span>
+              <p className="text-muted-foreground text-sm">
+                Follow the prompts to name your bot and choose a username.
+              </p>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="bg-muted text-muted-foreground flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+                4
+              </span>
+              <p className="text-muted-foreground text-sm">
+                BotFather will send you a message with your bot token.
+              </p>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="bg-muted text-muted-foreground flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+                5
+              </span>
+              <p className="text-muted-foreground text-sm">
+                Copy & Paste the token (it looks like a long string of numbers
+                and letters) in the field below and click Connect.
+              </p>
+            </li>
+          </ol>
+        </div>
+
+        {/* Offline warning */}
+        {isOffline && (
+          <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/30">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+              <div>
+                <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                  OpenClaw is offline
+                </p>
+                <p className="text-xs text-red-600 dark:text-red-500">
+                  The agent service needs to be running to connect Telegram.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Token input */}
+        <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="bot-token">Bot Token</Label>
+            <Label htmlFor="bot-token">Enter bot token</Label>
             <Input
               id="bot-token"
               type="password"
               placeholder="123456789:ABCDefGHijKLmnOPqrSTuvWxyZ"
               value={botToken}
               onChange={(e) => setBotToken(e.target.value)}
+              disabled={isOffline}
             />
-            <p className="text-muted-foreground text-sm">
-              Get your token from{" "}
-              <a
-                href="https://t.me/BotFather"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                @BotFather
-              </a>{" "}
-              on Telegram
-            </p>
           </div>
 
           {tokenMutation.error && (
@@ -314,31 +443,42 @@ export default function TelegramPage() {
         </div>
       </div>
 
-      <div className="flex flex-col-reverse gap-3 pt-6 sm:flex-row sm:justify-end sm:pt-8">
+      <div className="flex flex-col-reverse gap-3 pt-4 sm:flex-row sm:justify-end sm:pt-6">
         <Button
           type="button"
           variant="ghost"
           className="w-full sm:w-auto"
           onClick={handleSkip}
-          disabled={tokenMutation.isPending}
+          disabled={isOffline || tokenMutation.isPending}
         >
           Skip for now
         </Button>
-        <Button
-          type="submit"
-          variant="brand"
-          className="w-full sm:w-auto"
-          disabled={!botToken || tokenMutation.isPending}
-        >
-          {tokenMutation.isPending ? (
-            <>
-              <Spinner />
-              Connecting...
-            </>
-          ) : (
-            "Connect"
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={isOffline ? "cursor-not-allowed" : ""}>
+              <Button
+                type="submit"
+                variant="brand"
+                className="w-full sm:w-auto"
+                disabled={isOffline || !botToken || tokenMutation.isPending}
+              >
+                {tokenMutation.isPending ? (
+                  <>
+                    <Spinner />
+                    Connecting...
+                  </>
+                ) : (
+                  "Connect"
+                )}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {isOffline && (
+            <TooltipContent>
+              <p>Start OpenClaw to continue</p>
+            </TooltipContent>
           )}
-        </Button>
+        </Tooltip>
       </div>
     </form>
   );
