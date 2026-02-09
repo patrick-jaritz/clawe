@@ -50,4 +50,7 @@ docker/openclaw/data/
 .data/
 
 # OpenClaw state directory (shared with Docker in dev)
-.openclaw/
+.openclaw/*
+!.openclaw/.gitkeep
+.openclaw/logs/*
+!.openclaw/logs/.gitkeep

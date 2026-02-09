@@ -307,6 +307,23 @@ export const updateStatus = mutation({
       }
     }
 
+    // Gate: can't move to "review" or "done" if subtasks are still pending/in_progress
+    if (
+      (args.status === "review" || args.status === "done") &&
+      task.subtasks &&
+      task.subtasks.length > 0
+    ) {
+      const unfinished = task.subtasks.filter((st) => {
+        const status = st.status ?? (st.done ? "done" : "pending");
+        return status !== "done" && status !== "blocked";
+      });
+      if (unfinished.length > 0) {
+        throw new Error(
+          `Cannot move to ${args.status}: ${unfinished.length} subtask(s) still pending or in progress`,
+        );
+      }
+    }
+
     // Update task
     const updates: Record<string, unknown> = {
       status: args.status,
@@ -616,12 +633,21 @@ export const addSubtask = mutation({
   },
 });
 
-// Mark subtask as done/undone
+// Update subtask status
 export const updateSubtask = mutation({
   args: {
     taskId: v.id("tasks"),
     subtaskIndex: v.number(),
-    done: v.boolean(),
+    done: v.optional(v.boolean()),
+    status: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("in_progress"),
+        v.literal("done"),
+        v.literal("blocked"),
+      ),
+    ),
+    blockedReason: v.optional(v.string()),
     bySessionKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -634,17 +660,25 @@ export const updateSubtask = mutation({
 
     const subtasks = [...task.subtasks];
     const currentSubtask = subtasks[args.subtaskIndex];
-    // We already checked this exists above, but TypeScript needs reassurance
     if (!currentSubtask) {
       throw new Error("Subtask not found");
     }
+
+    // Determine new status — support both legacy `done` flag and new `status` field
+    let newStatus = args.status;
+    if (!newStatus && args.done !== undefined) {
+      newStatus = args.done ? "done" : "pending";
+    }
+    const isDone = newStatus === "done";
 
     const updatedSubtask = {
       title: currentSubtask.title,
       description: currentSubtask.description,
       assigneeId: currentSubtask.assigneeId,
-      done: args.done,
-      doneAt: args.done ? now : undefined,
+      done: isDone,
+      doneAt: isDone ? now : undefined,
+      status: newStatus ?? currentSubtask.status ?? "pending",
+      blockedReason: newStatus === "blocked" ? args.blockedReason : undefined,
     };
     subtasks[args.subtaskIndex] = updatedSubtask;
 
@@ -653,22 +687,23 @@ export const updateSubtask = mutation({
       updatedAt: now,
     });
 
-    // Log activity if completing
-    if (args.done) {
-      let agentId = undefined;
-      let agentName = "System";
-      if (args.bySessionKey) {
-        const sessionKey = args.bySessionKey;
-        const agent = await ctx.db
-          .query("agents")
-          .withIndex("by_sessionKey", (q) => q.eq("sessionKey", sessionKey))
-          .first();
-        if (agent) {
-          agentId = agent._id;
-          agentName = agent.name;
-        }
+    // Find agent
+    let agentId = undefined;
+    let agentName = "System";
+    if (args.bySessionKey) {
+      const sessionKey = args.bySessionKey;
+      const agent = await ctx.db
+        .query("agents")
+        .withIndex("by_sessionKey", (q) => q.eq("sessionKey", sessionKey))
+        .first();
+      if (agent) {
+        agentId = agent._id;
+        agentName = agent.name;
       }
+    }
 
+    // Log activity
+    if (isDone) {
       await ctx.db.insert("activities", {
         type: "subtask_completed",
         agentId,
@@ -676,6 +711,27 @@ export const updateSubtask = mutation({
         message: `${agentName} completed "${updatedSubtask.title}" on "${task.title}"`,
         createdAt: now,
       });
+    } else if (newStatus === "blocked") {
+      await ctx.db.insert("activities", {
+        type: "subtask_blocked" as any,
+        agentId,
+        taskId: args.taskId,
+        message: `${agentName} blocked "${updatedSubtask.title}" on "${task.title}"${args.blockedReason ? `: ${args.blockedReason}` : ""}`,
+        createdAt: now,
+      });
+
+      // Notify task creator about the blocked subtask
+      if (task.createdBy) {
+        await ctx.db.insert("notifications", {
+          targetAgentId: task.createdBy,
+          sourceAgentId: agentId,
+          type: "review_requested",
+          taskId: args.taskId,
+          content: `⚠️ Subtask blocked: "${updatedSubtask.title}" on "${task.title}"${args.blockedReason ? ` — ${args.blockedReason}` : ""}`,
+          delivered: false,
+          createdAt: now,
+        });
+      }
     }
   },
 });
@@ -749,6 +805,139 @@ export const createFromDashboard = mutation({
       message: `Task created: ${args.title}`,
       createdAt: now,
     });
+
+    return taskId;
+  },
+});
+
+// Create a full task with description, subtasks, and assignments in one atomic operation
+export const createWithPlan = mutation({
+  args: {
+    title: v.string(),
+    description: v.string(),
+    priority: v.optional(
+      v.union(
+        v.literal("low"),
+        v.literal("normal"),
+        v.literal("high"),
+        v.literal("urgent"),
+      ),
+    ),
+    assigneeSessionKey: v.optional(v.string()),
+    createdBySessionKey: v.optional(v.string()),
+    subtasks: v.array(
+      v.object({
+        title: v.string(),
+        description: v.optional(v.string()),
+        assigneeSessionKey: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    // Resolve creator
+    let createdBy = undefined;
+    let creatorName = "System";
+    if (args.createdBySessionKey) {
+      const sessionKey = args.createdBySessionKey;
+      const creator = await ctx.db
+        .query("agents")
+        .withIndex("by_sessionKey", (q) => q.eq("sessionKey", sessionKey))
+        .first();
+      if (creator) {
+        createdBy = creator._id;
+        creatorName = creator.name;
+      }
+    }
+
+    // Resolve primary assignee
+    const assigneeIds: Id<"agents">[] = [];
+    if (args.assigneeSessionKey) {
+      const sessionKey = args.assigneeSessionKey;
+      const assignee = await ctx.db
+        .query("agents")
+        .withIndex("by_sessionKey", (q) => q.eq("sessionKey", sessionKey))
+        .first();
+      if (assignee) {
+        assigneeIds.push(assignee._id);
+      }
+    }
+
+    // Resolve subtask assignees and build subtasks array
+    const subtasks = [];
+    for (const st of args.subtasks) {
+      let assigneeId = undefined;
+      if (st.assigneeSessionKey) {
+        const sessionKey = st.assigneeSessionKey;
+        const assignee = await ctx.db
+          .query("agents")
+          .withIndex("by_sessionKey", (q) => q.eq("sessionKey", sessionKey))
+          .first();
+        if (assignee) {
+          assigneeId = assignee._id;
+          // Also add subtask assignees to task-level assignees if not already there
+          if (!assigneeIds.includes(assignee._id)) {
+            assigneeIds.push(assignee._id);
+          }
+        }
+      }
+
+      subtasks.push({
+        title: st.title,
+        description: st.description,
+        done: false,
+        assigneeId,
+      });
+    }
+
+    // Create the task
+    const taskId = await ctx.db.insert("tasks", {
+      title: args.title,
+      description: args.description,
+      status: assigneeIds.length > 0 ? "assigned" : "inbox",
+      priority: args.priority ?? "normal",
+      assigneeIds: assigneeIds.length > 0 ? assigneeIds : undefined,
+      subtasks: subtasks.length > 0 ? subtasks : undefined,
+      createdBy,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Log activity
+    await ctx.db.insert("activities", {
+      type: "task_created",
+      agentId: createdBy,
+      taskId,
+      message: `${creatorName} planned task: ${args.title} (${subtasks.length} subtasks)`,
+      createdAt: now,
+    });
+
+    // Send notifications to all assigned agents
+    for (const assigneeId of assigneeIds) {
+      const assignee = await ctx.db.get(assigneeId);
+      if (assignee) {
+        // Build notification content with subtask details
+        const agentSubtasks = subtasks
+          .filter((st) => st.assigneeId === assigneeId)
+          .map((st) => `  • ${st.title}`)
+          .join("\n");
+
+        const content = agentSubtasks
+          ? `📋 New task: "${args.title}"\n\nYour subtasks:\n${agentSubtasks}`
+          : `📋 New task assigned: "${args.title}"`;
+
+        await ctx.db.insert("notifications", {
+          targetAgentId: assigneeId,
+          sourceAgentId: createdBy,
+          type: "task_assigned",
+          taskId,
+          content,
+          delivered: false,
+          createdAt: now,
+        });
+      }
+    }
 
     return taskId;
   },

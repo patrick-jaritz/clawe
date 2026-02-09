@@ -7,6 +7,10 @@ import {
   AlignLeft,
   User,
   FileText,
+  Circle,
+  CheckCircle2,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@clawe/ui/lib/utils";
 import {
@@ -141,6 +145,7 @@ export const KanbanCard = ({
                   ) : (
                     <ChevronRight className="h-3 w-3" />
                   )}
+                  {task.subtasks.filter((st) => st.done).length}/
                   {task.subtasks.length} subtask
                   {task.subtasks.length !== 1 && "s"}
                 </Button>
@@ -149,7 +154,7 @@ export const KanbanCard = ({
               {task.documentCount && task.documentCount > 0 && (
                 <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                   <FileText className="h-3 w-3" />
-                  {task.documentCount} document
+                  {task.documentCount} doc
                   {task.documentCount !== 1 && "s"}
                 </span>
               )}
@@ -159,17 +164,38 @@ export const KanbanCard = ({
 
       {/* Expanded subtasks */}
       {expanded && hasSubtasks && (
-        <div className="mt-2 ml-3 space-y-2">
-          {task.subtasks.map((subtask) => (
-            <KanbanCard
-              key={subtask.id}
-              task={subtask}
-              onTaskClick={onTaskClick}
-              isSubtask
-              parentTitle={task.title}
-            />
-          ))}
-        </div>
+        <ul className="mt-2 ml-3 space-y-1">
+          {task.subtasks.map((subtask) => {
+            const status =
+              subtask.status ?? (subtask.done ? "done" : "pending");
+            return (
+              <li
+                key={subtask.id}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1 text-xs",
+                  status === "done" && "text-muted-foreground",
+                  status === "blocked" && "text-red-600 dark:text-red-400",
+                )}
+              >
+                {status === "done" && (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />
+                )}
+                {status === "in_progress" && (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-blue-500" />
+                )}
+                {status === "blocked" && (
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                )}
+                {status === "pending" && (
+                  <Circle className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className={status === "done" ? "line-through" : ""}>
+                  {subtask.title}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

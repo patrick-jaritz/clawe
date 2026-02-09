@@ -24,6 +24,7 @@ describe("subtaskCheck", () => {
       taskId: "task-123",
       subtaskIndex: 0,
       done: true,
+      status: "done",
       bySessionKey: undefined,
     });
     expect(console.log).toHaveBeenCalledWith("✅ Subtask 0 marked as done");
@@ -38,6 +39,7 @@ describe("subtaskCheck", () => {
       taskId: "task-456",
       subtaskIndex: 2,
       done: true,
+      status: "done",
       bySessionKey: "agent:inky:main",
     });
   });
@@ -51,6 +53,7 @@ describe("subtaskCheck", () => {
       taskId: "task-789",
       subtaskIndex: 5,
       done: true,
+      status: "done",
       bySessionKey: undefined,
     });
   });
@@ -71,9 +74,10 @@ describe("subtaskUncheck", () => {
       taskId: "task-123",
       subtaskIndex: 1,
       done: false,
+      status: "pending",
       bySessionKey: undefined,
     });
-    expect(console.log).toHaveBeenCalledWith("✅ Subtask 1 marked as not done");
+    expect(console.log).toHaveBeenCalledWith("✅ Subtask 1 marked as pending");
   });
 
   it("marks subtask as not done with agent attribution", async () => {
@@ -85,6 +89,7 @@ describe("subtaskUncheck", () => {
       taskId: "task-456",
       subtaskIndex: 0,
       done: false,
+      status: "pending",
       bySessionKey: "agent:main:main",
     });
   });

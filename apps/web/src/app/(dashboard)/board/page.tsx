@@ -20,6 +20,7 @@ import {
 import {
   KanbanBoard,
   type KanbanTask,
+  type KanbanSubtask,
   type KanbanColumnDef,
 } from "@/components/kanban";
 import { LiveFeed, LiveFeedTitle } from "@/components/live-feed";
@@ -42,16 +43,21 @@ function mapPriority(priority?: string): "low" | "medium" | "high" {
 
 // Map Convex task to Kanban task format
 function mapTask(task: TaskWithAssignees): KanbanTask {
-  const subtasks: KanbanTask[] =
-    task.subtasks
-      ?.filter((st) => !st.done)
-      .map((st, i) => ({
-        id: `${task._id}-${i}`,
-        title: st.title,
-        description: st.description,
-        priority: "medium",
-        subtasks: [],
-      })) || [];
+  const subtasks: KanbanSubtask[] =
+    task.subtasks?.map((st, i) => ({
+      id: `${task._id}-${i}`,
+      title: st.title,
+      description: st.description,
+      done: st.done || false,
+      status: st.status ?? (st.done ? "done" : "pending"),
+      blockedReason: st.blockedReason,
+      assignee: (() => {
+        if (!st.assigneeId) return undefined;
+        const agent = task.assignees?.find((a) => a._id === st.assigneeId);
+        return agent ? `${agent.emoji || ""} ${agent.name}`.trim() : undefined;
+      })(),
+      doneAt: st.doneAt,
+    })) || [];
 
   return {
     id: task._id,

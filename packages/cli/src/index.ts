@@ -1,12 +1,18 @@
 import { check } from "./commands/check.js";
 import { tasks } from "./commands/tasks.js";
 import { taskCreate } from "./commands/task-create.js";
+import { taskPlan } from "./commands/task-plan.js";
 import { taskView } from "./commands/task-view.js";
 import { taskStatus } from "./commands/task-status.js";
 import { taskComment } from "./commands/task-comment.js";
 import { taskAssign } from "./commands/task-assign.js";
 import { subtaskAdd } from "./commands/subtask-add.js";
-import { subtaskCheck, subtaskUncheck } from "./commands/subtask-check.js";
+import {
+  subtaskCheck,
+  subtaskUncheck,
+  subtaskBlock,
+  subtaskProgress,
+} from "./commands/subtask-check.js";
 import { deliver, deliverables } from "./commands/deliver.js";
 import { notify } from "./commands/notify.js";
 import { squad } from "./commands/squad.js";
@@ -46,6 +52,9 @@ Commands:
       --assign <sessionKey>             Assign to agent
       --by <sessionKey>                 Created by agent
       --priority <low|normal|high|urgent>
+      --description <text>              Task description
+  clawe task:plan <json>                Create task with full plan (JSON)
+                                        Includes description + subtasks + assignments
   clawe task:view <taskId>              View full task details
   clawe task:status <taskId> <status>   Update task status
       --by <sessionKey>                 Updated by agent
@@ -57,6 +66,9 @@ Commands:
       --assign <sessionKey>             Assign to agent
       --description <text>              Subtask description
   clawe subtask:check <taskId> <index>  Mark subtask done
+  clawe subtask:block <taskId> <index>  Mark subtask blocked
+      --reason <text>                   Reason for blocking
+  clawe subtask:progress <taskId> <idx> Mark subtask in progress
       --by <sessionKey>                 Completed by
   clawe subtask:uncheck <taskId> <idx>  Mark subtask not done
   clawe deliver <taskId> <path> <title> Register a deliverable
@@ -122,13 +134,14 @@ async function main(): Promise<void> {
         const title = positionalArgs[0];
         if (!title) {
           console.error(
-            "Usage: clawe task:create <title> [--assign <key>] [--by <key>]",
+            "Usage: clawe task:create <title> [--assign <key>] [--by <key>] [--description <text>]",
           );
           process.exit(1);
         }
         await taskCreate(title, {
           assign: options.assign,
           by: options.by,
+          description: options.description,
           priority: options.priority as
             | "low"
             | "normal"
@@ -136,6 +149,21 @@ async function main(): Promise<void> {
             | "urgent"
             | undefined,
         });
+        break;
+      }
+
+      case "task:plan": {
+        const planJson = positionalArgs[0];
+        if (!planJson) {
+          console.error("Usage: clawe task:plan '<json>'");
+          console.error("");
+          console.error("Example:");
+          console.error(
+            `  clawe task:plan '{"title":"Blog Post","description":"Write about...","subtasks":[{"title":"Research"}]}'`,
+          );
+          process.exit(1);
+        }
+        await taskPlan(planJson);
         break;
       }
 
@@ -228,6 +256,35 @@ async function main(): Promise<void> {
           process.exit(1);
         }
         await subtaskUncheck(taskId, index, { by: options.by });
+        break;
+      }
+
+      case "subtask:block": {
+        const taskId = positionalArgs[0];
+        const index = positionalArgs[1];
+        if (!taskId || !index) {
+          console.error(
+            "Usage: clawe subtask:block <taskId> <index> [--by <key>] [--reason <text>]",
+          );
+          process.exit(1);
+        }
+        await subtaskBlock(taskId, index, {
+          by: options.by,
+          reason: options.reason,
+        });
+        break;
+      }
+
+      case "subtask:progress": {
+        const taskId = positionalArgs[0];
+        const index = positionalArgs[1];
+        if (!taskId || !index) {
+          console.error(
+            "Usage: clawe subtask:progress <taskId> <index> [--by <key>]",
+          );
+          process.exit(1);
+        }
+        await subtaskProgress(taskId, index, { by: options.by });
         break;
       }
 

@@ -32,15 +32,28 @@ export async function taskView(taskId: string): Promise<void> {
         st: {
           done: boolean;
           title: string;
+          status?: string;
+          blockedReason?: string;
           assignee?: { emoji?: string; name: string } | null;
         },
         i: number,
       ) => {
-        const check = st.done ? "✅" : "⬜";
+        const status = st.status ?? (st.done ? "done" : "pending");
+        const icons: Record<string, string> = {
+          done: "✅",
+          in_progress: "🔄",
+          blocked: "🚫",
+          pending: "⬜",
+        };
+        const icon = icons[status] || "⬜";
         const assignee = st.assignee
           ? ` → ${st.assignee.emoji || ""} ${st.assignee.name}`
           : "";
-        console.log(`   ${i}. ${check} ${st.title}${assignee}`);
+        const blocked =
+          status === "blocked" && st.blockedReason
+            ? ` (${st.blockedReason})`
+            : "";
+        console.log(`   ${i}. ${icon} ${st.title}${assignee}${blocked}`);
       },
     );
     console.log();

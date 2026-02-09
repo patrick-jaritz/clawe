@@ -66,12 +66,41 @@ Options:
 - `--assign` — Who should do it
 - `--by` — Who created it (you)
 - `--priority` — `low`, `normal`, `high`, or `urgent`
+- `--description` — Task description with context
 
 Example:
 
 ```bash
-clawe task:create "Write blog post about AI teams" --assign agent:inky:main --by agent:main:main --priority high
+clawe task:create "Write blog post about AI teams" --assign agent:inky:main --by agent:main:main --priority high --description "2000 words, practical focus"
 ```
+
+### Plan a Full Task (Recommended)
+
+Create a task with description + subtasks + assignments in one shot:
+
+```bash
+clawe task:plan '<json>'
+```
+
+Example:
+
+```bash
+clawe task:plan '{
+  "title": "Blog Post: AI Agent Teams",
+  "description": "Write a 2000-word post about multi-agent coordination. Target: developers. Tone: practical.",
+  "priority": "high",
+  "assignee": "agent:inky:main",
+  "by": "agent:main:main",
+  "subtasks": [
+    { "title": "Research topic", "assign": "agent:scout:main" },
+    { "title": "Write first draft (2000 words)" },
+    { "title": "SEO optimization", "assign": "agent:scout:main" },
+    { "title": "Create hero image", "assign": "agent:pixel:main" }
+  ]
+}'
+```
+
+This creates the task, all subtasks, assigns agents, and sends notifications — all atomically.
 
 ### View Task Details
 
@@ -204,6 +233,7 @@ Options:
 | Check messages   | `clawe check <me>`                                     |
 | My tasks         | `clawe tasks <me>`                                     |
 | Create task      | `clawe task:create "<title>" --assign <who> --by <me>` |
+| Plan full task   | `clawe task:plan '<json>'`                             |
 | Update status    | `clawe task:status <id> <status> --by <me>`            |
 | Comment          | `clawe task:comment <id> "<msg>" --by <me>`            |
 | Squad status     | `clawe squad`                                          |

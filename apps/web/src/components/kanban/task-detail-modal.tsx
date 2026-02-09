@@ -12,12 +12,32 @@ import {
 import { Button } from "@clawe/ui/components/button";
 import { Textarea } from "@clawe/ui/components/textarea";
 import { cn } from "@clawe/ui/lib/utils";
-import { Circle, ThumbsUp, Pencil } from "lucide-react";
+import {
+  Circle,
+  CheckCircle2,
+  Loader2,
+  AlertTriangle,
+  ThumbsUp,
+  Pencil,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import type { Id } from "@clawe/backend/dataModel";
 import type { KanbanTask } from "./types";
 import type { DocumentWithCreator } from "@clawe/backend/types";
 import { DocumentsSection } from "./_components/documents-section";
 import { DocumentViewerModal } from "./_components/document-viewer-modal";
+
+function timeAgo(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  return `${days}d`;
+}
 
 const priorityConfig: Record<
   KanbanTask["priority"],
@@ -26,7 +46,7 @@ const priorityConfig: Record<
   high: {
     label: "High",
     className:
-      "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+      "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   },
   medium: {
     label: "Medium",
@@ -55,6 +75,10 @@ export const TaskDetailModal = ({
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(true);
+  const [docsShowAll, setDocsShowAll] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   const approve = useMutation(api.tasks.approve);
   const requestChanges = useMutation(api.tasks.requestChanges);
@@ -64,6 +88,9 @@ export const TaskDetailModal = ({
   const priority = priorityConfig[task.priority];
   const hasSubtasks = task.subtasks.length > 0;
   const isReview = task.status === "review";
+  const doneCount = task.subtasks.filter((st) => st.done).length;
+  const totalCount = task.subtasks.length;
+  const progressPercent = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
 
   const handleApprove = async () => {
     setIsSubmitting(true);
@@ -104,51 +131,154 @@ export const TaskDetailModal = ({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="flex max-h-[85vh] max-w-lg flex-col">
           <DialogHeader>
-            <DialogTitle className="text-xl">{task.title}</DialogTitle>
+            <DialogTitle className="text-xl leading-tight">
+              {task.title}
+            </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Priority badge */}
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+            {/* Priority & Assignee row */}
             <div className="flex items-center gap-2">
               <span
                 className={cn(
-                  "rounded-md px-2 py-1 text-xs font-medium",
+                  "rounded-full px-2.5 py-0.5 text-xs font-semibold",
                   priority.className,
                 )}
               >
-                {priority.label} Priority
+                {priority.label}
               </span>
+              {task.assignee && (
+                <span className="text-muted-foreground text-xs">
+                  Assigned to {task.assignee}
+                </span>
+              )}
             </div>
 
             {/* Description */}
             {task.description && (
               <div>
-                <h4 className="text-muted-foreground mb-1 text-sm font-medium">
+                <h4 className="text-muted-foreground mb-1.5 text-xs font-semibold tracking-wide uppercase">
                   Description
                 </h4>
-                <p className="text-sm">{task.description}</p>
+                <p
+                  className={cn(
+                    "text-sm leading-relaxed text-gray-700 dark:text-gray-300",
+                    !descExpanded && "line-clamp-2",
+                  )}
+                >
+                  {task.description}
+                </p>
+                {task.description.length > 120 && (
+                  <button
+                    type="button"
+                    className="mt-1 text-xs font-medium text-gray-900 hover:text-gray-700 dark:text-gray-100 dark:hover:text-gray-300"
+                    onClick={() => setDescExpanded(!descExpanded)}
+                  >
+                    {descExpanded ? "Show less" : "Show more"}
+                  </button>
+                )}
               </div>
             )}
 
-            {/* Subtasks list */}
+            {/* Subtasks */}
             {hasSubtasks && (
               <div>
-                <h4 className="text-muted-foreground mb-2 text-sm font-medium">
-                  Subtasks ({task.subtasks.length})
-                </h4>
-                <ul className="space-y-2">
-                  {task.subtasks.map((subtask) => (
-                    <li
-                      key={subtask.id}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <Circle className="text-muted-foreground h-4 w-4" />
-                      <span>{subtask.title}</span>
-                    </li>
-                  ))}
-                </ul>
+                <button
+                  type="button"
+                  className="mb-2 flex w-full items-center justify-between"
+                  onClick={() => setSubtasksOpen(!subtasksOpen)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {subtasksOpen ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
+                    )}
+                    <h4 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                      Subtasks
+                    </h4>
+                  </div>
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {doneCount}/{totalCount} complete
+                  </span>
+                </button>
+
+                {/* Progress bar (always visible) */}
+                <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all duration-300",
+                      progressPercent === 100 ? "bg-green-500" : "bg-blue-500",
+                    )}
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+
+                {subtasksOpen && (
+                  <ul className="space-y-1">
+                    {task.subtasks.map((subtask) => {
+                      const status =
+                        subtask.status ?? (subtask.done ? "done" : "pending");
+                      return (
+                        <li
+                          key={subtask.id}
+                          className={cn(
+                            "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm",
+                            status === "done" && "text-muted-foreground",
+                            status === "blocked" &&
+                              "bg-red-50 dark:bg-red-950/20",
+                            (status === "pending" ||
+                              status === "in_progress") &&
+                              "text-gray-800 dark:text-gray-200",
+                          )}
+                        >
+                          <div className="shrink-0">
+                            {status === "done" && (
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            )}
+                            {status === "in_progress" && (
+                              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                            )}
+                            {status === "blocked" && (
+                              <AlertTriangle className="h-4 w-4 text-red-500" />
+                            )}
+                            {status === "pending" && (
+                              <Circle className="text-muted-foreground h-4 w-4" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span
+                              className={cn(
+                                "block truncate",
+                                status === "done" ? "line-through" : "",
+                              )}
+                            >
+                              {subtask.title}
+                            </span>
+                            {status === "blocked" && subtask.blockedReason && (
+                              <p className="mt-0.5 truncate text-xs text-red-600 dark:text-red-400">
+                                {subtask.blockedReason}
+                              </p>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right text-xs whitespace-nowrap text-gray-400 dark:text-gray-500">
+                            {subtask.assignee && (
+                              <span>{subtask.assignee}</span>
+                            )}
+                            {subtask.assignee && subtask.doneAt && (
+                              <span> · </span>
+                            )}
+                            {subtask.doneAt && (
+                              <span>{timeAgo(subtask.doneAt)}</span>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             )}
 
@@ -156,6 +286,10 @@ export const TaskDetailModal = ({
             <DocumentsSection
               taskId={task.id}
               onViewDocument={setSelectedDocument}
+              open={docsOpen}
+              onToggle={() => setDocsOpen(!docsOpen)}
+              maxVisible={docsShowAll ? undefined : 2}
+              onShowAll={() => setDocsShowAll(true)}
             />
 
             {/* Review actions */}

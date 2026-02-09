@@ -1,3 +1,16 @@
+export type SubtaskStatus = "pending" | "in_progress" | "done" | "blocked";
+
+export type KanbanSubtask = {
+  id: string;
+  title: string;
+  description?: string;
+  done?: boolean;
+  status?: SubtaskStatus;
+  blockedReason?: string;
+  assignee?: string;
+  doneAt?: number;
+};
+
 // Kanban's own task type (isolated from Convex)
 export type KanbanTask = {
   id: string;
@@ -6,7 +19,7 @@ export type KanbanTask = {
   status?: "inbox" | "assigned" | "in_progress" | "review" | "done";
   priority: "low" | "medium" | "high";
   assignee?: string;
-  subtasks: KanbanTask[];
+  subtasks: KanbanSubtask[];
   documentCount?: number;
 };
 

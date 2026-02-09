@@ -15,6 +15,7 @@ export async function subtaskCheck(
     taskId: taskId as Id<"tasks">,
     subtaskIndex: parseInt(index, 10),
     done: true,
+    status: "done",
     bySessionKey: options.by,
   });
 
@@ -30,8 +31,51 @@ export async function subtaskUncheck(
     taskId: taskId as Id<"tasks">,
     subtaskIndex: parseInt(index, 10),
     done: false,
+    status: "pending",
     bySessionKey: options.by,
   });
 
-  console.log(`✅ Subtask ${index} marked as not done`);
+  console.log(`✅ Subtask ${index} marked as pending`);
+}
+
+interface SubtaskBlockOptions {
+  by?: string;
+  reason?: string;
+}
+
+export async function subtaskBlock(
+  taskId: string,
+  index: string,
+  options: SubtaskBlockOptions,
+): Promise<void> {
+  await client.mutation(api.tasks.updateSubtask, {
+    taskId: taskId as Id<"tasks">,
+    subtaskIndex: parseInt(index, 10),
+    status: "blocked",
+    blockedReason: options.reason,
+    bySessionKey: options.by,
+  });
+
+  console.log(
+    `⚠️ Subtask ${index} marked as blocked${options.reason ? `: ${options.reason}` : ""}`,
+  );
+}
+
+interface SubtaskProgressOptions {
+  by?: string;
+}
+
+export async function subtaskProgress(
+  taskId: string,
+  index: string,
+  options: SubtaskProgressOptions,
+): Promise<void> {
+  await client.mutation(api.tasks.updateSubtask, {
+    taskId: taskId as Id<"tasks">,
+    subtaskIndex: parseInt(index, 10),
+    status: "in_progress",
+    bySessionKey: options.by,
+  });
+
+  console.log(`🔄 Subtask ${index} marked as in progress`);
 }

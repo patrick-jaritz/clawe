@@ -5,6 +5,7 @@ interface TaskCreateOptions {
   assign?: string;
   by?: string;
   priority?: "low" | "normal" | "high" | "urgent";
+  description?: string;
 }
 
 export async function taskCreate(
@@ -13,6 +14,7 @@ export async function taskCreate(
 ): Promise<void> {
   const taskId = await client.mutation(api.tasks.create, {
     title,
+    description: options.description,
     assigneeSessionKey: options.assign,
     createdBySessionKey: options.by,
     priority: options.priority,

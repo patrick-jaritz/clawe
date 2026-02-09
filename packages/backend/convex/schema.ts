@@ -49,6 +49,15 @@ export default defineSchema({
           done: v.boolean(),
           doneAt: v.optional(v.number()),
           assigneeId: v.optional(v.id("agents")),
+          status: v.optional(
+            v.union(
+              v.literal("pending"),
+              v.literal("in_progress"),
+              v.literal("done"),
+              v.literal("blocked"),
+            ),
+          ),
+          blockedReason: v.optional(v.string()),
         }),
       ),
     ),

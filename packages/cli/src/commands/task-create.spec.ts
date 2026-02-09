@@ -58,6 +58,22 @@ describe("taskCreate", () => {
     });
   });
 
+  it("creates a task with description", async () => {
+    vi.mocked(client.mutation).mockResolvedValue("task-desc");
+
+    await taskCreate("Write blog post", {
+      description: "2000 words, practical focus",
+    });
+
+    expect(client.mutation).toHaveBeenCalledWith(expect.anything(), {
+      title: "Write blog post",
+      description: "2000 words, practical focus",
+      assigneeSessionKey: undefined,
+      createdBySessionKey: undefined,
+      priority: undefined,
+    });
+  });
+
   it("creates a task with all options", async () => {
     vi.mocked(client.mutation).mockResolvedValue("task-full");
 
@@ -65,10 +81,12 @@ describe("taskCreate", () => {
       assign: "agent:inky:main",
       by: "agent:main:main",
       priority: "high",
+      description: "Detailed task description",
     });
 
     expect(client.mutation).toHaveBeenCalledWith(expect.anything(), {
       title: "Full featured task",
+      description: "Detailed task description",
       assigneeSessionKey: "agent:inky:main",
       createdBySessionKey: "agent:main:main",
       priority: "high",
