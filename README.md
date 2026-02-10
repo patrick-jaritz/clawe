@@ -111,7 +111,7 @@ Schedule recurring tasks that automatically create inbox items:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     DOCKER COMPOSE                         │
+│                     DOCKER COMPOSE                          │
 ├─────────────────┬─────────────────────┬─────────────────────┤
 │    openclaw     │       watcher       │        clawe        │
 │                 │                     │                     │
