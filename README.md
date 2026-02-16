@@ -1,10 +1,12 @@
-# 🦞 Clawe
+<div align="center">
+  <img src="./docs/images/clawe.png" alt="Clawe" width="600" />
+  <p><strong>A multi-agent coordination system powered by <a href="https://github.com/openclaw/openclaw">OpenClaw</a>.</strong></p>
+  <p>Deploy a team of AI agents that work together, each with their own identity, workspace, and scheduled heartbeats. Coordinate tasks, share context, and deliver notifications in near real-time.</p>
+</div>
 
-A multi-agent coordination system powered by [OpenClaw](https://github.com/openclaw/openclaw).
-
-Deploy a team of AI agents that work together, each with their own identity, workspace, and scheduled heartbeats. Coordinate tasks, share context, and deliver notifications in near real-time.
-
-![Clawe Dashboard](docs/clawe-app.png)
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/d2f892d9-4c32-4c31-95e5-222d4ea87592" width="600" controls></video>
+</div>
 
 ## Features
 
