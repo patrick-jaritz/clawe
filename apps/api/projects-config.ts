@@ -16,7 +16,7 @@ export const PROJECTS: ProjectConfig[] = [
     description: 'Startup idea validation tool — landing page and validation pipeline for founders.',
     path: '/Users/centrick/CODE/before-you-leap/site',
     port: 3003,
-    startCmd: 'npm run dev',
+    startCmd: 'npm install --prefer-offline --silent && npm run dev',
     techStack: ['Next.js', 'TypeScript'],
     status: 'available',
   },
