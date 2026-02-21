@@ -3,17 +3,23 @@
  */
 
 import { Router } from "express";
-import { spawn } from "child_process";
+import { spawn, ChildProcess } from "child_process";
 import * as http from "http";
+import { EventEmitter } from "events";
 import { PROJECTS, type ProjectConfig } from "../projects-config.js";
 
 const router = Router();
 
-// Store running process PIDs
+// Store running process PIDs and log buffers
 const runningProcesses = new Map<string, number>();
+const logBuffers = new Map<string, string[]>();
+const logEmitters = new Map<string, EventEmitter>();
 
 // PATH for spawned processes
 const SPAWN_PATH = '/Users/centrick/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin';
+
+// Max log lines per project
+const MAX_LOG_LINES = 100;
 
 /**
  * Check if a project is running by attempting HTTP request
@@ -30,6 +36,30 @@ function checkRunning(port: number): Promise<boolean> {
       resolve(false);
     });
   });
+}
+
+/**
+ * Add line to log buffer and emit to listeners
+ */
+function addLogLine(id: string, line: string) {
+  // Initialize buffer if needed
+  if (!logBuffers.has(id)) {
+    logBuffers.set(id, []);
+  }
+
+  const buffer = logBuffers.get(id)!;
+  buffer.push(line);
+
+  // Keep only last MAX_LOG_LINES
+  if (buffer.length > MAX_LOG_LINES) {
+    buffer.shift();
+  }
+
+  // Emit to listeners
+  const emitter = logEmitters.get(id);
+  if (emitter) {
+    emitter.emit('log', line);
+  }
 }
 
 /**
@@ -59,6 +89,79 @@ router.get("/", async (_req, res) => {
 });
 
 /**
+ * GET /api/projects/:id/status
+ * Returns running status and PID for a project
+ */
+router.get("/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const project = PROJECTS.find((p) => p.id === id);
+
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const pid = runningProcesses.get(id);
+    const running = project.status === 'available' 
+      ? await checkRunning(project.port)
+      : false;
+
+    res.json({ 
+      running,
+      pid: pid || undefined,
+    });
+  } catch (err) {
+    console.error("Error fetching project status:", err);
+    res.status(500).json({ error: "Failed to fetch status" });
+  }
+});
+
+/**
+ * GET /api/projects/:id/logs
+ * SSE endpoint for streaming project logs
+ */
+router.get("/:id/logs", (req, res) => {
+  const { id } = req.params;
+  const project = PROJECTS.find((p) => p.id === id);
+
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  // Send buffered logs
+  const buffer = logBuffers.get(id) || [];
+  for (const line of buffer) {
+    res.write(`data: ${line}\n\n`);
+  }
+
+  // Create emitter if doesn't exist
+  if (!logEmitters.has(id)) {
+    logEmitters.set(id, new EventEmitter());
+  }
+
+  const emitter = logEmitters.get(id)!;
+
+  // Listen for new logs
+  const logListener = (line: string) => {
+    res.write(`data: ${line}\n\n`);
+  };
+
+  emitter.on('log', logListener);
+
+  // Clean up on disconnect
+  req.on('close', () => {
+    emitter.removeListener('log', logListener);
+  });
+});
+
+/**
  * POST /api/projects/:id/start
  * Start a project by spawning its dev command
  */
@@ -84,11 +187,14 @@ router.post("/:id/start", async (req, res) => {
       return;
     }
 
-    // Spawn process
+    // Clear old logs
+    logBuffers.set(id, []);
+
+    // Spawn process with piped stdio
     const child = spawn('/bin/bash', ['-c', project.startCmd], {
       cwd: project.path,
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
         PATH: SPAWN_PATH,
@@ -98,6 +204,28 @@ router.post("/:id/start", async (req, res) => {
 
     // Store PID
     runningProcesses.set(id, child.pid!);
+
+    // Pipe stdout to logs
+    child.stdout?.on('data', (data) => {
+      const lines = data.toString().split('\n').filter((l: string) => l.trim());
+      for (const line of lines) {
+        addLogLine(id, line);
+      }
+    });
+
+    // Pipe stderr to logs
+    child.stderr?.on('data', (data) => {
+      const lines = data.toString().split('\n').filter((l: string) => l.trim());
+      for (const line of lines) {
+        addLogLine(id, `[ERROR] ${line}`);
+      }
+    });
+
+    // Handle process exit
+    child.on('exit', (code) => {
+      addLogLine(id, `Process exited with code ${code}`);
+      runningProcesses.delete(id);
+    });
 
     // Detach so it keeps running
     child.unref();

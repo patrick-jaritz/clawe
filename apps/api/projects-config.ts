@@ -7,6 +7,7 @@ export interface ProjectConfig {
   startCmd: string;      // e.g. 'npm run dev'
   techStack: string[];   // e.g. ['Next.js', 'TypeScript']
   status: 'available' | 'no-ui' | 'planned';
+  category: 'byl' | 'tools' | 'intelligence' | 'external';
 }
 
 export const PROJECTS: ProjectConfig[] = [
@@ -19,6 +20,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'npm install --prefer-offline --silent && npm run dev',
     techStack: ['Next.js', 'TypeScript'],
     status: 'available',
+    category: 'byl',
   },
   {
     id: 'byl-engine',
@@ -29,6 +31,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'npm install --prefer-offline --silent && npm run serve',
     techStack: ['Node.js', 'Claude', 'Multi-agent'],
     status: 'available',
+    category: 'byl',
   },
   {
     id: 'legal-assistant',
@@ -39,6 +42,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'npm install --prefer-offline --silent && node server.js',
     techStack: ['Node.js', 'Qdrant', 'RAG'],
     status: 'available',
+    category: 'tools',
   },
   {
     id: 'byl-app',
@@ -49,16 +53,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'npm install --prefer-offline --silent && npm run dev',
     techStack: ['Next.js', 'Supabase', 'FastAPI'],
     status: 'available',
-  },
-  {
-    id: 'edgewell',
-    name: 'EdgeWell',
-    description: 'Nervous system training via solo practice. Science-first landing page with HRV integration.',
-    path: '/Users/centrick/clawd/coordination/projects/edgewell/site',
-    port: 3005,
-    startCmd: 'npm install --prefer-offline --silent && npm run dev',
-    techStack: ['Next.js', 'Tailwind'],
-    status: 'available',
+    category: 'byl',
   },
   {
     id: 'essay-pipeline',
@@ -69,6 +64,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'npm install --prefer-offline --silent && npm run serve',
     techStack: ['Node.js', 'Multi-model', 'SSE'],
     status: 'available',
+    category: 'tools',
   },
   {
     id: 'youtube-scraper',
@@ -79,6 +75,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'bash start-clawe.sh',
     techStack: ['Python', 'FastAPI', 'YouTube API'],
     status: 'available',
+    category: 'tools',
   },
   {
     id: 'whaleintel',
@@ -89,6 +86,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'bash start-clawe.sh',
     techStack: ['Next.js', 'FastAPI', 'Python', 'ClickHouse', 'Docker'],
     status: 'available',
+    category: 'external',
   },
   {
     id: 'longevity-twin',
@@ -99,6 +97,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'bash start-clawe.sh',
     techStack: ['React', 'Express', 'Drizzle', 'NeonDB'],
     status: 'available',
+    category: 'external',
   },
   {
     id: 'document-intelligence',
@@ -109,6 +108,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'bash start-clawe.sh',
     techStack: ['React', 'Vite', 'Supabase', 'TypeScript'],
     status: 'available',
+    category: 'external',
   },
   {
     id: 'mindwtr',
@@ -119,6 +119,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'bash start-clawe.sh',
     techStack: ['React', 'Tauri', 'Bun', 'TypeScript'],
     status: 'available',
+    category: 'external',
   },
   {
     id: 'validateyouragent',
@@ -129,6 +130,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'npm install --prefer-offline --silent && npm run dev',
     techStack: ['Next.js', 'TypeScript', 'Tailwind'],
     status: 'planned',
+    category: 'byl',
   },
   {
     id: 'intelligence-query',
@@ -139,6 +141,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'bash start-clawe.sh',
     techStack: ['TypeScript', 'LanceDB', 'OpenAI'],
     status: 'available',
+    category: 'intelligence',
   },
   {
     id: 'dba-assistant',
@@ -149,6 +152,7 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'bash start-clawe.sh',
     techStack: ['Node.js', 'Claude', 'Express'],
     status: 'available',
+    category: 'tools',
   },
   {
     id: 'memory-browser',
@@ -159,5 +163,6 @@ export const PROJECTS: ProjectConfig[] = [
     startCmd: 'bash start-clawe.sh',
     techStack: ['Node.js', 'SQLite', 'Express'],
     status: 'available',
+    category: 'intelligence',
   },
 ];

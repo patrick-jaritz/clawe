@@ -129,15 +129,21 @@ export type Project = {
   techStack: string[];
   status: 'available' | 'no-ui' | 'planned';
   running: boolean;
+  category: 'byl' | 'tools' | 'intelligence' | 'external';
 };
 
 export type ProjectsResponse = {
   projects: Project[];
 };
 
+export type ProjectStatus = {
+  running: boolean;
+  pid?: number;
+};
+
 export function useProjects() {
   return useSWR<ProjectsResponse>("/api/projects", fetcher, {
-    refreshInterval: 5000,
+    refreshInterval: 10000,
   });
 }
 
@@ -171,4 +177,18 @@ export async function stopProject(id: string): Promise<{ stopped: boolean }> {
   }
 
   return res.json();
+}
+
+export async function getProjectStatus(id: string): Promise<ProjectStatus> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/status`);
+
+  if (!res.ok) {
+    throw new Error(`Failed to get project status: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export function projectLogsUrl(id: string): string {
+  return `${API_BASE}/api/projects/${id}/logs`;
 }
