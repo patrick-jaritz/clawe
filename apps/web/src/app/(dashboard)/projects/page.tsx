@@ -183,7 +183,7 @@ const ProjectsPage = () => {
                           asChild
                         >
                           <a
-                            href={`http://localhost:${project.port}`}
+                            href={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:${project.port}`}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
@@ -242,7 +242,7 @@ const ProjectsPage = () => {
               </Button>
             </div>
             <iframe
-              src={`http://100.117.151.74:${previewProjectData.port}`}
+              src={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:${previewProjectData.port}`}
               className="w-full border-0"
               style={{ height: "600px" }}
               title={`Preview of ${previewProjectData.name}`}

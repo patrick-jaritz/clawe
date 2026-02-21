@@ -1,9 +1,11 @@
 import useSWR from "swr";
 
-const API_BASE = "http://localhost:3001";
+// Use relative URLs — Next.js proxy routes /api/* → localhost:3001
+// This works from any device (Tailscale, mobile, etc.)
+const API_BASE = "";
 
 const fetcher = (url: string) =>
-  fetch(`${API_BASE}${url}`).then((res) => {
+  fetch(url).then((res) => {
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     return res.json();
   });
