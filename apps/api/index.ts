@@ -6,6 +6,7 @@ import path from "path";
 import https from "https";
 import http from "http";
 import intelRouter from "./routes/intel.js";
+import projectsRouter from "./routes/projects.js";
 
 const app = express();
 app.use(cors());
@@ -90,6 +91,7 @@ function deriveStatus(health: unknown): "online" | "offline" {
 // ---------------------------------------------------------------------------
 
 app.use("/api/intel", intelRouter);
+app.use("/api/projects", projectsRouter);
 
 // ---------------------------------------------------------------------------
 // GET /api/health

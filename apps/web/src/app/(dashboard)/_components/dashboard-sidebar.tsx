@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { SquareKanban, Bot, Brain, Settings } from "lucide-react";
+import { SquareKanban, Bot, Brain, LayoutGrid, Settings } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { NavMain, type NavItem } from "./nav-main";
@@ -51,6 +51,11 @@ const SidebarNavContent = () => {
       title: "Intelligence",
       url: "/intelligence",
       icon: Brain,
+    },
+    {
+      title: "Projects",
+      url: "/projects",
+      icon: LayoutGrid,
     },
     {
       title: "Settings",

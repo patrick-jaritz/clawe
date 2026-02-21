@@ -116,3 +116,57 @@ export async function createIntelChunk(data: {
 
   return res.json();
 }
+
+export type Project = {
+  id: string;
+  name: string;
+  description: string;
+  path: string;
+  port: number;
+  startCmd: string;
+  techStack: string[];
+  status: 'available' | 'no-ui' | 'planned';
+  running: boolean;
+};
+
+export type ProjectsResponse = {
+  projects: Project[];
+};
+
+export function useProjects() {
+  return useSWR<ProjectsResponse>("/api/projects", fetcher, {
+    refreshInterval: 5000,
+  });
+}
+
+export async function startProject(id: string): Promise<{ started: boolean; port: number; pid?: number }> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/start`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || `Failed to start project: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function stopProject(id: string): Promise<{ stopped: boolean }> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/stop`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || `Failed to stop project: ${res.status}`);
+  }
+
+  return res.json();
+}
