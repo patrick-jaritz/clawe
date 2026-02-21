@@ -44,7 +44,7 @@ export const PROJECTS: ProjectConfig[] = [
     id: 'byl-app',
     name: 'BYL Web App',
     description: 'Full validation platform — dashboard, validations, settings. Requires Supabase + FastAPI backend. Frontend runs standalone (auth disabled without Supabase).',
-    path: '/Users/centrick/clawd/coordination/projects/before-you-leap/web/frontend',
+    path: '/Users/centrick/CODE/before-you-leap/web/frontend',
     port: 3008,
     startCmd: 'npm install --prefer-offline --silent && npm run dev',
     techStack: ['Next.js', 'Supabase', 'FastAPI'],
