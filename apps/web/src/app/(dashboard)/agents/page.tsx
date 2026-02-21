@@ -1,7 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "@clawe/backend";
+import { useAgents } from "@/lib/api/local";
 import {
   PageHeader,
   PageHeaderRow,
@@ -44,7 +43,7 @@ const formatLastSeen = (timestamp?: number): string => {
 };
 
 const AgentsPage = () => {
-  const agents = useQuery(api.agents.squad, {});
+  const { data: agents } = useAgents();
 
   return (
     <>
@@ -73,7 +72,7 @@ const AgentsPage = () => {
             <div className="flex flex-wrap gap-4">
               {agents.map((agent) => {
                 const status = deriveStatus(agent);
-                const config = statusConfig[status];
+                const config = statusConfig[status] ?? statusConfig.offline;
 
                 return (
                   <div
@@ -103,10 +102,10 @@ const AgentsPage = () => {
                     </p>
 
                     <div className="mt-auto pt-4">
-                      {agent.currentTask ? (
+                      {agent.currentActivity ? (
                         <p className="truncate text-xs">
                           <span className="text-muted-foreground">Task: </span>
-                          {agent.currentTask.title}
+                          {agent.currentActivity}
                         </p>
                       ) : (
                         <p className="text-muted-foreground text-xs">

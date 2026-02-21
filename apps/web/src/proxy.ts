@@ -27,34 +27,8 @@ function unauthorized(message: string) {
   });
 }
 
-export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
-
-  // Cognito page navigations carry no token — client-side useAuth guards those.
-  const isApiRoute = pathname.startsWith("/api/");
-  if (AUTH_PROVIDER === "cognito" && !isApiRoute) {
-    return NextResponse.next();
-  }
-
-  const token = extractToken(request);
-
-  if (!token) {
-    return isApiRoute
-      ? unauthorized("Unauthorized")
-      : NextResponse.redirect(new URL("/auth/login", request.url));
-  }
-
-  const payload = await verifyToken(token);
-  if (!payload) {
-    return isApiRoute
-      ? unauthorized("Invalid token")
-      : NextResponse.redirect(new URL("/auth/login", request.url));
-  }
-
+export async function proxy(_request: NextRequest) {
+  // CENTAUR: Auth disabled — access secured at network level by Tailscale.
   return NextResponse.next();
 }
 

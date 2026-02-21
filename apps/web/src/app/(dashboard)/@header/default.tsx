@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Separator } from "@clawe/ui/components/separator";
 import { SidebarToggle } from "@dashboard/sidebar-toggle";
@@ -26,15 +25,12 @@ const DefaultHeaderContent = () => {
             />
           </>
         )}
-        <Link
-          href="https://www.clawe.ai"
-          target="_blank"
-          rel="noopener noreferrer"
+        <span
           className="text-foreground text-base font-semibold"
           style={{ fontFamily: "var(--font-space-grotesk)" }}
         >
-          Clawe
-        </Link>
+          CENTAUR
+        </span>
       </div>
       <div className="flex items-center gap-2">
         <SquadhubStatus />

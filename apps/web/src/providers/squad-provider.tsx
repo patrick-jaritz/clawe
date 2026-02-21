@@ -1,8 +1,7 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@clawe/backend";
+import { createContext, useContext } from "react";
+import type { ReactNode } from "react";
 
 export type Squad = {
   id: string;
@@ -19,23 +18,20 @@ type SquadContextType = {
 
 const SquadContext = createContext<SquadContextType | null>(null);
 
+const CENTAUR_SQUAD: Squad = {
+  id: "centaur",
+  name: "CENTAUR",
+  description: "Aurel & Søren",
+};
+
 export const SquadProvider = ({ children }: { children: ReactNode }) => {
-  const tenant = useQuery(api.tenants.getGeneral);
-  const isLoading = tenant === undefined;
-
-  const squad: Squad | null = tenant
-    ? { id: tenant._id, name: tenant.name, description: tenant.description }
-    : null;
-
-  const squads = squad ? [squad] : [];
-
   return (
     <SquadContext.Provider
       value={{
-        squads,
-        selectedSquad: squad,
+        squads: [CENTAUR_SQUAD],
+        selectedSquad: CENTAUR_SQUAD,
         setSelectedSquad: () => {},
-        isLoading,
+        isLoading: false,
       }}
     >
       {children}

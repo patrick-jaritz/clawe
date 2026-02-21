@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@clawe/backend";
-import type { TaskWithAssignees } from "@clawe/backend/types";
+import { useTasks } from "@/lib/api/local";
+import type { LocalTask } from "@/lib/api/local";
 import { Bell } from "lucide-react";
 import { Button } from "@clawe/ui/components/button";
 import {
@@ -20,7 +19,6 @@ import {
 import {
   KanbanBoard,
   type KanbanTask,
-  type KanbanSubtask,
   type KanbanColumnDef,
 } from "@/components/kanban";
 import { LiveFeed, LiveFeedTitle } from "@/components/live-feed";
@@ -28,7 +26,7 @@ import { useDrawer } from "@/providers/drawer-provider";
 import { AgentsPanel } from "./_components/agents-panel";
 import { NewTaskDialog } from "./_components/new-task-dialog";
 
-// Map priority from Convex to Kanban format
+// Map priority to Kanban format
 function mapPriority(priority?: string): "low" | "medium" | "high" {
   switch (priority) {
     case "urgent":
@@ -41,24 +39,8 @@ function mapPriority(priority?: string): "low" | "medium" | "high" {
   }
 }
 
-// Map Convex task to Kanban task format
-function mapTask(task: TaskWithAssignees): KanbanTask {
-  const subtasks: KanbanSubtask[] =
-    task.subtasks?.map((st, i) => ({
-      id: `${task._id}-${i}`,
-      title: st.title,
-      description: st.description,
-      done: st.done || false,
-      status: st.status ?? (st.done ? "done" : "pending"),
-      blockedReason: st.blockedReason,
-      assignee: (() => {
-        if (!st.assigneeId) return undefined;
-        const agent = task.assignees?.find((a) => a._id === st.assigneeId);
-        return agent ? `${agent.emoji || ""} ${agent.name}`.trim() : undefined;
-      })(),
-      doneAt: st.doneAt,
-    })) || [];
-
+// Map LocalTask to KanbanTask format
+function mapTask(task: LocalTask): KanbanTask {
   return {
     id: task._id,
     title: task.title,
@@ -68,7 +50,7 @@ function mapTask(task: TaskWithAssignees): KanbanTask {
     assignee: task.assignees?.[0]
       ? `${task.assignees[0].emoji || ""} ${task.assignees[0].name}`.trim()
       : undefined,
-    subtasks,
+    subtasks: [],
     documentCount: task.documentCount,
   };
 }
@@ -84,12 +66,11 @@ function isValidStatus(status: string): status is TaskStatus {
 // Panel sizes in pixels
 const COLLAPSED_SIZE = "48px";
 const DEFAULT_SIZE = "220px";
-const MIN_SIZE = "180px"; // Must be > COLLAPSED_SIZE for expand to work
+const MIN_SIZE = "180px";
 const MAX_SIZE = "280px";
 
 const STORAGE_KEY = "board-agents-panel-collapsed";
 
-// Get initial collapsed state from localStorage (runs once on module load)
 const getInitialCollapsed = () => {
   if (typeof window === "undefined") return false;
   return localStorage.getItem(STORAGE_KEY) === "true";
@@ -97,15 +78,13 @@ const getInitialCollapsed = () => {
 
 const BoardPage = () => {
   const { openDrawer } = useDrawer();
-  const tasks = useQuery(api.tasks.list, {});
+  const { data: tasks } = useTasks();
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [isCollapsed, setIsCollapsed] = useState(getInitialCollapsed);
 
   // Filter tasks by selected agents
   const filteredTasks = tasks?.filter((task) => {
-    // If no agents selected, show all tasks
     if (selectedAgentIds.length === 0) return true;
-    // Show task if any of its assignees is selected
     return task.assignees?.some((a) => selectedAgentIds.includes(a._id));
   });
 
@@ -162,7 +141,6 @@ const BoardPage = () => {
     asPercentage: number;
     inPixels: number;
   }) => {
-    // Panel is collapsed when size is at or near collapsedSize (48px)
     const collapsed = size.inPixels <= 60;
     setIsCollapsed(collapsed);
     localStorage.setItem(STORAGE_KEY, String(collapsed));

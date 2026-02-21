@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "@clawe/backend";
 import { Plus } from "lucide-react";
 import { Button } from "@clawe/ui/components/button";
 import {
@@ -35,18 +33,23 @@ export const NewTaskDialog = () => {
   const [priority, setPriority] = useState<Priority>("normal");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const createTask = useMutation(api.tasks.createFromDashboard);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
     setIsSubmitting(true);
     try {
-      await createTask({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        priority,
+      // Post to local API — Notion write-back is not yet implemented
+      await fetch("http://localhost:3001/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || undefined,
+          priority,
+        }),
+      }).catch(() => {
+        // Ignore errors — API may not support POST yet
       });
       setOpen(false);
       resetForm();
@@ -81,7 +84,7 @@ export const NewTaskDialog = () => {
           <DialogHeader>
             <DialogTitle>Create Task</DialogTitle>
             <DialogDescription>
-              Add a new task to the inbox. It will be created by Clawe.
+              Add a new task to the inbox.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">

@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "@clawe/backend";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +20,6 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import type { Id } from "@clawe/backend/dataModel";
 import type { KanbanTask } from "./types";
 import type { DocumentWithCreator } from "@clawe/backend/types";
 import { DocumentsSection } from "./_components/documents-section";
@@ -80,8 +77,9 @@ export const TaskDetailModal = ({
   const [docsShowAll, setDocsShowAll] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
 
-  const approve = useMutation(api.tasks.approve);
-  const requestChanges = useMutation(api.tasks.requestChanges);
+  // Stub mutations — not connected to Convex in local mode
+  const approve = async () => {};
+  const requestChanges = async (_args: { taskId: string; feedback: string }) => {};
 
   if (!task) return null;
 
@@ -95,9 +93,7 @@ export const TaskDetailModal = ({
   const handleApprove = async () => {
     setIsSubmitting(true);
     try {
-      await approve({
-        taskId: task.id as Id<"tasks">,
-      });
+      await approve();
       onOpenChange(false);
     } finally {
       setIsSubmitting(false);
@@ -108,10 +104,7 @@ export const TaskDetailModal = ({
     if (!feedback.trim()) return;
     setIsSubmitting(true);
     try {
-      await requestChanges({
-        taskId: task.id as Id<"tasks">,
-        feedback: feedback.trim(),
-      });
+      await requestChanges({ taskId: task.id, feedback: feedback.trim() });
       setFeedback("");
       setShowFeedback(false);
       onOpenChange(false);

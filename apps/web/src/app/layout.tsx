@@ -28,8 +28,8 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Clawe",
-  description: "AI-powered multi-agent coordination system.",
+  title: "CENTAUR Command",
+  description: "CENTAUR multi-agent coordination dashboard.",
 };
 
 export default function RootLayout({

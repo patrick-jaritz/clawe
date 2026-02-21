@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@clawe/backend";
+import { useActivities } from "@/lib/api/local";
 import { cn } from "@clawe/ui/lib/utils";
 import { ScrollArea } from "@clawe/ui/components/scroll-area";
 import { Bell, BellOff, Loader2 } from "lucide-react";
@@ -11,7 +10,7 @@ import type { FeedActivity, FeedFilter } from "./types";
 
 /** Title component for use in drawer header */
 export const LiveFeedTitle = ({ limit = 50 }: { limit?: number }) => {
-  const activities = useQuery(api.activities.feed, { limit });
+  const { data: activities } = useActivities(limit);
   const count = activities?.length ?? 0;
 
   return (
@@ -54,6 +53,30 @@ const FILTER_CONFIG: {
   { id: "heartbeats", label: "Online", types: ["agent_heartbeat"] },
 ];
 
+// Adapt a local activity to the FeedActivity shape expected by LiveFeedItem
+function toFeedActivity(a: {
+  _id: string;
+  type: string;
+  agentId: string;
+  message: string;
+  createdAt: number;
+}): FeedActivity {
+  return {
+    _id: a._id as FeedActivity["_id"],
+    _creationTime: a.createdAt,
+    tenantId: "local" as FeedActivity["tenantId"],
+    type: "message_sent" as FeedActivity["type"],
+    message: a.message,
+    createdAt: a.createdAt,
+    agent: {
+      _id: a.agentId as NonNullable<FeedActivity["agent"]>["_id"],
+      name: a.agentId === "aurel" ? "Aurel" : a.agentId === "soren" ? "Søren" : a.agentId,
+      emoji: a.agentId === "aurel" ? "🏛️" : a.agentId === "soren" ? "🧠" : "🤖",
+    },
+    task: null,
+  } as FeedActivity;
+}
+
 export type LiveFeedProps = {
   className?: string;
   limit?: number;
@@ -62,26 +85,22 @@ export type LiveFeedProps = {
 export const LiveFeed = ({ className, limit = 50 }: LiveFeedProps) => {
   const [activeFilter, setActiveFilter] = useState<FeedFilter>("all");
 
-  const activities = useQuery(api.activities.feed, { limit });
+  const { data: rawActivities } = useActivities(limit);
+
+  const activities = useMemo(
+    () => rawActivities?.map(toFeedActivity) ?? [],
+    [rawActivities],
+  );
 
   const filteredActivities = useMemo(() => {
-    if (!activities) return [];
-
     const filterConfig = FILTER_CONFIG.find((f) => f.id === activeFilter);
-    if (!filterConfig || filterConfig.types.length === 0) {
-      return activities as FeedActivity[];
-    }
-
-    return (activities as FeedActivity[]).filter((activity) =>
+    if (!filterConfig || filterConfig.types.length === 0) return activities;
+    return activities.filter((activity) =>
       filterConfig.types.includes(activity.type),
     );
   }, [activities, activeFilter]);
 
   const filterCounts = useMemo((): Record<FeedFilter, number> => {
-    if (!activities) {
-      return { all: 0, tasks: 0, status: 0, heartbeats: 0 };
-    }
-
     const counts: Record<FeedFilter, number> = {
       all: activities.length,
       tasks: 0,
@@ -89,7 +108,7 @@ export const LiveFeed = ({ className, limit = 50 }: LiveFeedProps) => {
       heartbeats: 0,
     };
 
-    for (const activity of activities as FeedActivity[]) {
+    for (const activity of activities) {
       for (const filter of FILTER_CONFIG) {
         if (filter.types.includes(activity.type)) {
           counts[filter.id]++;
@@ -142,7 +161,7 @@ export const LiveFeed = ({ className, limit = 50 }: LiveFeedProps) => {
       {/* Feed list */}
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-4 pt-4">
-          {!activities ? (
+          {!rawActivities ? (
             <div className="flex flex-col items-center justify-center py-12">
               <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
               <span className="text-muted-foreground mt-2 text-sm">
