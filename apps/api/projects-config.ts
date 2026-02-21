@@ -26,9 +26,9 @@ export const PROJECTS: ProjectConfig[] = [
     description: 'AI-powered Austrian law advisor. Grounded in RIS API v2.6, 12 laws, 3035 vectors.',
     path: '/Users/centrick/clawd/projects/legal-assistant',
     port: 3004,
-    startCmd: 'node agentic.js --serve',
+    startCmd: 'npm install --prefer-offline --silent && node server.js',
     techStack: ['Node.js', 'Qdrant', 'RAG'],
-    status: 'no-ui',
+    status: 'available',
   },
   {
     id: 'edgewell',
@@ -43,11 +43,11 @@ export const PROJECTS: ProjectConfig[] = [
   {
     id: 'essay-pipeline',
     name: 'Essay Pipeline',
-    description: '5-stage multi-model essay generator: Perplexity → Claude → GPT → Gemini → Claude.',
-    path: '',
+    description: '5-stage multi-model essay generator: Brave → Claude → GPT-4o → Claude → Claude.',
+    path: '/Users/centrick/clawd/coordination/projects/essay-pipeline',
     port: 3006,
-    startCmd: '',
-    techStack: ['Node.js', 'Multi-model'],
-    status: 'planned',
+    startCmd: 'npm install --prefer-offline --silent && npm run serve',
+    techStack: ['Node.js', 'Multi-model', 'SSE'],
+    status: 'available',
   },
 ];
