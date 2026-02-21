@@ -71,6 +71,16 @@ export const PROJECTS: ProjectConfig[] = [
     status: 'available',
   },
   {
+    id: 'youtube-scraper',
+    name: 'YouTube Scraper',
+    description: 'Fetch and save YouTube channel transcripts. Glassmorphic web UI, parallel fetching, multi-language. Requires YouTube Data API key in .env.',
+    path: '/Users/centrick/CODE/youtube-scraper',
+    port: 3010,
+    startCmd: 'bash start-clawe.sh',
+    techStack: ['Python', 'FastAPI', 'YouTube API'],
+    status: 'available',
+  },
+  {
     id: 'whaleintel',
     name: 'WhaleIntel',
     description: 'Real-time crypto whale intelligence & alpha discovery. 8-factor scoring, ML clustering, AI chat. Requires Docker (postgres, redis, clickhouse).',
