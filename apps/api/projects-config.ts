@@ -70,4 +70,14 @@ export const PROJECTS: ProjectConfig[] = [
     techStack: ['Node.js', 'Multi-model', 'SSE'],
     status: 'available',
   },
+  {
+    id: 'whaleintel',
+    name: 'WhaleIntel',
+    description: 'Real-time crypto whale intelligence & alpha discovery. 8-factor scoring, ML clustering, AI chat. Requires Docker (postgres, redis, clickhouse).',
+    path: '/Users/centrick/CODE/whaleintel',
+    port: 3009,
+    startCmd: 'bash start-clawe.sh',
+    techStack: ['Next.js', 'FastAPI', 'Python', 'ClickHouse', 'Docker'],
+    status: 'available',
+  },
 ];
