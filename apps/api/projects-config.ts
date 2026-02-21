@@ -22,8 +22,8 @@ export const PROJECTS: ProjectConfig[] = [
   },
   {
     id: 'byl-engine',
-    name: 'BYL Validation Engine',
-    description: 'Business Advisory Council — 8 collectors + 8 AI analysts + synthesis. Automated intelligence for idea validation.',
+    name: 'BAC',
+    description: 'Business Advisory Council — 8 collectors + 8 AI analysts + synthesis.',
     path: '/Users/centrick/CODE/before-you-leap/bac',
     port: 3007,
     startCmd: 'npm install --prefer-offline --silent && npm run serve',
