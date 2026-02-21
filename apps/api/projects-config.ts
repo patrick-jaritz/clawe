@@ -43,12 +43,12 @@ export const PROJECTS: ProjectConfig[] = [
   {
     id: 'edgewell',
     name: 'EdgeWell',
-    description: 'Nervous system training via solo practice. Science-first PWA with HRV integration.',
-    path: '',
+    description: 'Nervous system training via solo practice. Science-first landing page with HRV integration.',
+    path: '/Users/centrick/clawd/coordination/projects/edgewell/site',
     port: 3005,
-    startCmd: '',
-    techStack: ['PWA', 'React'],
-    status: 'planned',
+    startCmd: 'npm install --prefer-offline --silent && npm run dev',
+    techStack: ['Next.js', 'Tailwind'],
+    status: 'available',
   },
   {
     id: 'essay-pipeline',
