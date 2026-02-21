@@ -33,7 +33,7 @@ export const PROJECTS: ProjectConfig[] = [
   {
     id: 'legal-assistant',
     name: 'Austrian Legal Assistant',
-    description: 'AI-powered Austrian law advisor. Grounded in RIS API v2.6, 12 laws, 3035 vectors.',
+    description: 'AI-powered Austrian law advisor. Grounded in RIS API v2.6, 12 laws, 3035 vectors. Qdrant runs natively (auto-started via LaunchAgent on :6333, no Docker needed).',
     path: '/Users/centrick/clawd/projects/legal-assistant',
     port: 3004,
     startCmd: 'npm install --prefer-offline --silent && node server.js',
@@ -83,7 +83,7 @@ export const PROJECTS: ProjectConfig[] = [
   {
     id: 'whaleintel',
     name: 'WhaleIntel',
-    description: 'Real-time crypto whale intelligence & alpha discovery. 8-factor scoring, ML clustering, AI chat. Requires Docker (postgres, redis, clickhouse).',
+    description: 'Crypto whale intelligence & alpha discovery. 8-factor scoring, ML clustering, AI chat. Runs in demo mode (no Docker). Live data requires PostgreSQL + Redis + ClickHouse.',
     path: '/Users/centrick/CODE/whaleintel',
     port: 3009,
     startCmd: 'bash start-clawe.sh',
