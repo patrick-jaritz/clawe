@@ -309,3 +309,29 @@ app.get("/api/activities", (_req, res) => {
 app.listen(PORT, () => {
   console.log(`CENTAUR API running on http://localhost:${PORT}`);
 });
+
+// ── Mindwtr data proxy ─────────────────────────────────────────────────────
+import { readFileSync, writeFileSync } from "fs";
+const MINDWTR_DATA_PATH = path.join(
+  process.env.HOME ?? "/Users/centrick",
+  "Library/Application Support/mindwtr/data.json"
+);
+
+app.get("/api/mindwtr/data", (_req, res) => {
+  try {
+    const raw = readFileSync(MINDWTR_DATA_PATH, "utf8");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.json(JSON.parse(raw));
+  } catch {
+    res.status(404).json({ tasks: [], projects: [], sections: [], areas: [], settings: {} });
+  }
+});
+
+app.post("/api/mindwtr/data", express.json({ limit: "10mb" }), (req, res) => {
+  try {
+    writeFileSync(MINDWTR_DATA_PATH, JSON.stringify(req.body, null, 2));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
