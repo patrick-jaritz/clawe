@@ -12,12 +12,22 @@ export interface ProjectConfig {
 export const PROJECTS: ProjectConfig[] = [
   {
     id: 'byl',
-    name: 'Before You Leap',
-    description: 'Startup idea validation tool — landing page and validation pipeline for founders.',
+    name: 'Before You Leap — Landing Page',
+    description: 'High-converting landing page for the BYL 30-day validation sprint service.',
     path: '/Users/centrick/CODE/before-you-leap/site',
     port: 3003,
     startCmd: 'npm install --prefer-offline --silent && npm run dev',
     techStack: ['Next.js', 'TypeScript'],
+    status: 'available',
+  },
+  {
+    id: 'byl-engine',
+    name: 'BYL Validation Engine',
+    description: 'Business Advisory Council — 8 collectors + 8 AI analysts + synthesis. Automated intelligence for idea validation.',
+    path: '/Users/centrick/CODE/before-you-leap/bac',
+    port: 3007,
+    startCmd: 'npm install --prefer-offline --silent && npm run serve',
+    techStack: ['Node.js', 'Claude', 'Multi-agent'],
     status: 'available',
   },
   {
