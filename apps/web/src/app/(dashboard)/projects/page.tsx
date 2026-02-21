@@ -6,7 +6,6 @@ import {
   PageHeader,
   PageHeaderRow,
   PageHeaderTitle,
-  PageHeaderDescription,
 } from "@dashboard/page-header";
 import { Badge } from "@clawe/ui/components/badge";
 import { Button } from "@clawe/ui/components/button";
@@ -87,9 +86,7 @@ const ProjectsPage = () => {
         <PageHeaderRow>
           <div>
             <PageHeaderTitle>Projects</PageHeaderTitle>
-            <PageHeaderDescription>
-              Web app launcher and preview hub
-            </PageHeaderDescription>
+            <p className="text-sm text-muted-foreground">Web app launcher and preview hub</p>
           </div>
         </PageHeaderRow>
       </PageHeader>

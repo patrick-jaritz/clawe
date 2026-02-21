@@ -92,6 +92,7 @@ router.post("/:id/start", async (req, res) => {
       env: {
         ...process.env,
         PATH: SPAWN_PATH,
+        PORT: project.port.toString(),
       },
     });
 
