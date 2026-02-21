@@ -41,6 +41,16 @@ export const PROJECTS: ProjectConfig[] = [
     status: 'available',
   },
   {
+    id: 'byl-app',
+    name: 'BYL Web App',
+    description: 'Full validation platform — dashboard, validations, settings. Requires Supabase + FastAPI backend. Frontend runs standalone (auth disabled without Supabase).',
+    path: '/Users/centrick/clawd/coordination/projects/before-you-leap/web/frontend',
+    port: 3008,
+    startCmd: 'npm install --prefer-offline --silent && npm run dev',
+    techStack: ['Next.js', 'Supabase', 'FastAPI'],
+    status: 'available',
+  },
+  {
     id: 'edgewell',
     name: 'EdgeWell',
     description: 'Nervous system training via solo practice. Science-first landing page with HRV integration.',
