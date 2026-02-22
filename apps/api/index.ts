@@ -102,6 +102,93 @@ app.get("/api/health", (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/system/health
+// ---------------------------------------------------------------------------
+
+app.get("/api/system/health", async (_req, res) => {
+  // Check Qdrant
+  let qdrantOk = false;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: "localhost",
+          port: 6333,
+          path: "/readyz",
+          timeout: 1000,
+        },
+        (response) => {
+          qdrantOk = response.statusCode === 200;
+          resolve();
+        },
+      );
+      req.on("error", reject);
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error("Timeout"));
+      });
+      req.end();
+    });
+  } catch {
+    qdrantOk = false;
+  }
+
+  // Check LanceDB directory
+  const lanceDbPath = "/Users/centrick/clawd/aurel/memory-system/lancedb/";
+  let lanceDbOk = false;
+  let chunkCount = 0;
+  try {
+    lanceDbOk = fs.existsSync(lanceDbPath);
+    if (lanceDbOk) {
+      // Try to get chunk count from intel stats
+      try {
+        const { intelCount } = await import("./lib/lancedb.js");
+        chunkCount = await intelCount();
+      } catch {
+        chunkCount = 0;
+      }
+    }
+  } catch {
+    lanceDbOk = false;
+  }
+
+  res.json({
+    services: {
+      api: { ok: true, label: "CLAWE API" },
+      qdrant: { ok: qdrantOk, label: "Qdrant :6333" },
+      lancedb: { ok: lanceDbOk, label: "LanceDB", chunks: chunkCount },
+    },
+    next_ingest: "5:00 AM",
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/system/recent-intel
+// ---------------------------------------------------------------------------
+
+app.get("/api/system/recent-intel", async (_req, res) => {
+  try {
+    const { intelListAll } = await import("./lib/lancedb.js");
+    const { chunks } = await intelListAll(1, 5, "all");
+
+    // Format chunks for home page display
+    const recentChunks = chunks.map((chunk) => ({
+      id: chunk.id,
+      title: chunk.title,
+      source: chunk.source,
+      date: chunk.date,
+      url: chunk.url,
+      entity_type: chunk.entity_type,
+    }));
+
+    res.json({ chunks: recentChunks });
+  } catch (err) {
+    console.error("Error fetching recent intel:", err);
+    res.json({ chunks: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/agents
 // ---------------------------------------------------------------------------
 

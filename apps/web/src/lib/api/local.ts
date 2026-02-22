@@ -80,6 +80,13 @@ export type IntelChunksResponse = {
   total: number;
   page: number;
   pages: number;
+  query?: string;
+};
+
+export type IngestStatus = {
+  last_run: string | null;
+  chunk_count: number;
+  next_run: string;
 };
 
 export function useIntelChunks(page = 1, limit = 20, source = "all") {
@@ -90,6 +97,24 @@ export function useIntelChunks(page = 1, limit = 20, source = "all") {
       refreshInterval: 30000,
     }
   );
+}
+
+export function useIntelSearch(query: string, page = 1, limit = 20, source = "all") {
+  return useSWR<IntelChunksResponse>(
+    query.trim()
+      ? `/api/intel/search?q=${encodeURIComponent(query)}&page=${page}&limit=${limit}&source=${source}`
+      : null,
+    fetcher,
+    {
+      refreshInterval: 30000,
+    }
+  );
+}
+
+export function useIngestStatus() {
+  return useSWR<IngestStatus>("/api/intel/ingest/status", fetcher, {
+    refreshInterval: 30000,
+  });
 }
 
 export function useIntelStats() {
@@ -114,6 +139,37 @@ export async function createIntelChunk(data: {
 
   if (!res.ok) {
     throw new Error(`Failed to create intel chunk: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function triggerIngest(): Promise<{ started: boolean; pid?: number; message?: string }> {
+  const res = await fetch(`${API_BASE}/api/intel/ingest/run`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to trigger ingestion: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export type FullIntelChunk = IntelChunk & {
+  content: string;
+  vector: number[];
+  tags: string[];
+};
+
+export async function getIntelChunk(id: string): Promise<FullIntelChunk> {
+  const res = await fetch(`${API_BASE}/api/intel/chunks/${id}`);
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch intel chunk: ${res.status}`);
   }
 
   return res.json();
@@ -191,4 +247,38 @@ export async function getProjectStatus(id: string): Promise<ProjectStatus> {
 
 export function projectLogsUrl(id: string): string {
   return `${API_BASE}/api/projects/${id}/logs`;
+}
+
+export type SystemHealth = {
+  services: {
+    api: { ok: boolean; label: string };
+    qdrant: { ok: boolean; label: string };
+    lancedb: { ok: boolean; label: string; chunks: number };
+  };
+  next_ingest: string;
+};
+
+export type RecentIntel = {
+  id: string;
+  title: string;
+  source: string;
+  date: string;
+  url: string;
+  entity_type: string;
+};
+
+export type RecentIntelResponse = {
+  chunks: RecentIntel[];
+};
+
+export function useSystemHealth() {
+  return useSWR<SystemHealth>("/api/system/health", fetcher, {
+    refreshInterval: 30000,
+  });
+}
+
+export function useRecentIntel() {
+  return useSWR<RecentIntelResponse>("/api/system/recent-intel", fetcher, {
+    refreshInterval: 60000,
+  });
 }

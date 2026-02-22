@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { SquareKanban, Bot, Brain, LayoutGrid, Settings } from "lucide-react";
+import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { NavMain, type NavItem } from "./nav-main";
@@ -37,6 +37,11 @@ const SidebarNavContent = () => {
   };
 
   const navItems: NavItem[] = [
+    {
+      title: "Home",
+      url: "/",
+      icon: Home,
+    },
     {
       title: "Board",
       url: "/board",
