@@ -6,6 +6,8 @@ import { SidebarToggle } from "@dashboard/sidebar-toggle";
 import { ChatPanelToggle } from "@dashboard/chat-panel-toggle";
 import { isLockedSidebarRoute } from "@dashboard/sidebar-config";
 import { SquadhubStatus } from "@/components/squadhub-status";
+import { NotificationsPanel } from "@/components/notifications-panel";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const DefaultHeaderContent = () => {
   const pathname = usePathname();
@@ -34,6 +36,12 @@ const DefaultHeaderContent = () => {
       </div>
       <div className="flex items-center gap-2">
         <SquadhubStatus />
+        <Separator
+          orientation="vertical"
+          className="data-[orientation=vertical]:h-4"
+        />
+        <ThemeToggle />
+        <NotificationsPanel />
         <Separator
           orientation="vertical"
           className="data-[orientation=vertical]:h-4"

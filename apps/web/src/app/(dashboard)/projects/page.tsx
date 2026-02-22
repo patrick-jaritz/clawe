@@ -32,7 +32,9 @@ import {
   ChevronDown,
   ChevronUp,
   Terminal,
+  Search,
 } from "lucide-react";
+import { Input } from "@clawe/ui/components/input";
 import { cn } from "@clawe/ui/lib/utils";
 
 type CategoryKey = 'byl' | 'tools' | 'intelligence' | 'external';
@@ -56,6 +58,7 @@ const ProjectsPage = () => {
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
   const [logConnection, setLogConnection] = useState<EventSource | null>(null);
   const logBottomRef = React.useRef<HTMLDivElement>(null);
+  const [projectSearch, setProjectSearch] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [startupLogs, setStartupLogs] = useState<Record<string, string[]>>({});
   const [logConnections, setLogConnections] = useState<Record<string, EventSource>>({});
@@ -259,9 +262,16 @@ const ProjectsPage = () => {
     return acc;
   }, {} as Record<CategoryKey, Project[]>);
 
-  // Separate planned projects
-  const availableProjects = data?.projects.filter((p) => p.status !== 'planned') || [];
-  const plannedProjects = data?.projects.filter((p) => p.status === 'planned') || [];
+  // Separate planned projects (with search filter)
+  const searchLower = projectSearch.toLowerCase();
+  const matchesSearch = (p: Project) =>
+    !searchLower ||
+    p.name.toLowerCase().includes(searchLower) ||
+    (p.techStack ?? []).some((t) => t.toLowerCase().includes(searchLower)) ||
+    (p.description ?? "").toLowerCase().includes(searchLower);
+
+  const availableProjects = (data?.projects.filter((p) => p.status !== 'planned') || []).filter(matchesSearch);
+  const plannedProjects = (data?.projects.filter((p) => p.status === 'planned') || []).filter(matchesSearch);
 
   const runningCount = data?.projects.filter((p) => p.running).length || 0;
 
@@ -497,6 +507,25 @@ const ProjectsPage = () => {
           </div>
         </PageHeaderRow>
       </PageHeader>
+
+      {/* Search / filter */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search projects by name, tech, or description..."
+          value={projectSearch}
+          onChange={(e) => setProjectSearch(e.target.value)}
+          className="pl-10 pr-10"
+        />
+        {projectSearch && (
+          <button
+            onClick={() => setProjectSearch("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
       <div className="space-y-8">
         {/* Loading State */}

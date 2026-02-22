@@ -480,6 +480,91 @@ app.get("/api/activities", (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/notifications
+// ---------------------------------------------------------------------------
+
+import { intelCount, intelLastIngest } from "./lib/lancedb.js";
+
+app.get("/api/notifications", async (_req, res) => {
+  type Notification = {
+    id: string;
+    type: "deadline" | "agent" | "intel" | "info";
+    title: string;
+    body?: string;
+    urgent: boolean;
+    time?: string;
+  };
+
+  const notifications: Notification[] = [];
+
+  // 1. DBA deadline (March 31, 2026)
+  const DBA_DEADLINE = new Date("2026-03-31T23:59:00+02:00");
+  const now = new Date();
+  const daysLeft = Math.ceil((DBA_DEADLINE.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysLeft <= 60) {
+    notifications.push({
+      id: "dba-deadline",
+      type: "deadline",
+      title: `DBA papers due in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`,
+      body: "3 scientific papers — deadline March 31, 2026",
+      urgent: daysLeft <= 14,
+      time: DBA_DEADLINE.toISOString(),
+    });
+  }
+
+  // 2. Agent status
+  const agentFiles = [
+    { id: "aurel", name: "Aurel", file: "clawd/aurel/status/aurel.json" },
+    { id: "soren", name: "Søren", file: "clawd/coordination/status/soren.json" },
+  ];
+  const HOME = process.env.HOME ?? "/Users/centrick";
+  for (const agent of agentFiles) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(HOME, agent.file), "utf8"));
+      const ts = typeof raw.timestamp === "number"
+        ? raw.timestamp * (raw.timestamp < 1e12 ? 1000 : 1)
+        : raw.timestamp
+        ? new Date(raw.timestamp).getTime()
+        : null;
+      if (ts) {
+        const staleMins = (Date.now() - ts) / 60000;
+        if (staleMins > 60) {
+          const staleHrs = Math.floor(staleMins / 60);
+          notifications.push({
+            id: `agent-offline-${agent.id}`,
+            type: "agent",
+            title: `${agent.name} offline`,
+            body: `No heartbeat in ${staleHrs}h`,
+            urgent: staleMins > 240,
+            time: new Date(ts).toISOString(),
+          });
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 3. Intel chunk count
+  try {
+    const total = await intelCount();
+    const lastIngest = await intelLastIngest();
+    if (total > 0) {
+      notifications.push({
+        id: "intel-chunks",
+        type: "intel",
+        title: `${total} chunks in knowledge base`,
+        body: lastIngest ? `Last ingested ${new Date(lastIngest).toLocaleDateString()}` : undefined,
+        urgent: false,
+        time: lastIngest ?? undefined,
+      });
+    }
+  } catch { /* ignore */ }
+
+  const unread = notifications.filter((n) => n.urgent).length || notifications.length;
+
+  res.json({ notifications, unread });
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 

@@ -128,6 +128,7 @@ router.get("/stats", async (req, res) => {
 });
 
 // GET /api/intel/search?q=QUERY&source=all&page=1&limit=20
+// Uses vector search (semantic) when query is present — returns relevance scores
 router.get("/search", async (req, res) => {
   try {
     const query = (req.query.q as string) || "";
@@ -140,24 +141,31 @@ router.get("/search", async (req, res) => {
       return;
     }
 
-    // Fetch all chunks with source filter
-    const { chunks: allChunks } = await intelListAll(1, 10000, source);
+    // Embed the query and do vector search (semantic, scored)
+    const queryVec = await embed(query);
+    const searchResults = await intelSearch(queryVec, 100); // get top 100, then filter + paginate
 
-    // Filter by query (case-insensitive search in content and title)
-    const lowerQuery = query.toLowerCase();
-    const filtered = allChunks.filter(
-      (chunk) =>
-        chunk.content.toLowerCase().includes(lowerQuery) ||
-        chunk.title.toLowerCase().includes(lowerQuery)
-    );
+    // Filter by source if needed
+    const filtered = source === "all"
+      ? searchResults
+      : searchResults.filter((r) => r.source === source);
+
+    // Normalize distance to a 0–1 score (lower distance = higher score)
+    const minDist = Math.min(...filtered.map((r) => r._distance));
+    const maxDist = Math.max(...filtered.map((r) => r._distance));
+    const range = maxDist - minDist || 1;
+
+    const scored = filtered.map((r) => ({
+      ...r,
+      score: Math.round((1 - (r._distance - minDist) / range) * 100), // 0–100
+    }));
 
     // Paginate
-    const total = filtered.length;
+    const total = scored.length;
     const pages = Math.ceil(total / limit);
     const offset = (page - 1) * limit;
-    const paginatedChunks = filtered.slice(offset, offset + limit);
+    const paginatedChunks = scored.slice(offset, offset + limit);
 
-    // Add content preview
     const chunksWithPreview = paginatedChunks.map((chunk) => ({
       id: chunk.id,
       title: chunk.title,
@@ -165,6 +173,7 @@ router.get("/search", async (req, res) => {
       date: chunk.date,
       url: chunk.url,
       entity_type: chunk.entity_type,
+      score: chunk.score,
       content_preview:
         chunk.content.substring(0, 200) +
         (chunk.content.length > 200 ? "..." : ""),
@@ -176,6 +185,7 @@ router.get("/search", async (req, res) => {
       page,
       pages,
       query,
+      semantic: true,
     });
   } catch (err) {
     console.error("Error searching intel chunks:", err);

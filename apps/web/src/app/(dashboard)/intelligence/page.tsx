@@ -735,6 +735,20 @@ const IntelligencePage = () => {
                           </Badge>
                         )}
                         <span>{formatChunkDate(chunk.date)}</span>
+                        {isSearching && (chunk as { score?: number }).score !== undefined && (
+                          <span
+                            className={cn(
+                              "ml-auto font-medium tabular-nums",
+                              (chunk as { score?: number }).score! >= 70
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : (chunk as { score?: number }).score! >= 40
+                                ? "text-yellow-600 dark:text-yellow-400"
+                                : "text-muted-foreground"
+                            )}
+                          >
+                            {(chunk as { score?: number }).score}% match
+                          </span>
+                        )}
                       </div>
                     </div>
                   </Card>

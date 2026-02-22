@@ -360,3 +360,23 @@ export function askIntel(question: string, callbacks: AskIntelCallbacks): () => 
 
   return () => ctrl.abort();
 }
+
+export type AppNotification = {
+  id: string;
+  type: "deadline" | "agent" | "intel" | "info";
+  title: string;
+  body?: string;
+  urgent: boolean;
+  time?: string;
+};
+
+export type NotificationsResponse = {
+  notifications: AppNotification[];
+  unread: number;
+};
+
+export function useNotifications() {
+  return useSWR<NotificationsResponse>("/api/notifications", fetcher, {
+    refreshInterval: 60_000,
+  });
+}
