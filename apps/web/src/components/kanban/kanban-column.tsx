@@ -1,5 +1,6 @@
 "use client";
 
+import { useDroppable } from "@dnd-kit/core";
 import {
   Inbox,
   CircleDot,
@@ -60,12 +61,15 @@ export type KanbanColumnProps = {
 export const KanbanColumn = ({ column, onTaskClick }: KanbanColumnProps) => {
   const variant = columnVariants[column.variant];
   const IconComponent = columnIconComponents[column.variant];
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
   return (
     <div
+      ref={setNodeRef}
       className={cn(
-        "flex h-full min-w-48 flex-1 flex-col rounded-lg p-2",
+        "flex h-full min-w-48 flex-1 flex-col rounded-lg p-2 transition-colors",
         variant.column,
+        isOver && "ring-2 ring-inset ring-primary/40",
       )}
     >
       {/* Header */}

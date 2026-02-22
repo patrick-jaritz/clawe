@@ -3,7 +3,8 @@
 export const dynamic = "force-dynamic";
 
 import { useState } from "react";
-import { useTasks } from "@/lib/api/local";
+import { mutate } from "swr";
+import { useTasks, updateTaskStatus } from "@/lib/api/local";
 import type { LocalTask } from "@/lib/api/local";
 import { Bell } from "lucide-react";
 import { Button } from "@clawe/ui/components/button";
@@ -135,6 +136,15 @@ const BoardPage = () => {
     { id: "done", title: "Done", variant: "done", tasks: groupedTasks.done },
   ];
 
+  const handleTaskMove = async (taskId: string, newStatus: string) => {
+    try {
+      await updateTaskStatus(taskId, newStatus);
+      mutate("/api/tasks");
+    } catch (err) {
+      console.error("Failed to move task:", err);
+    }
+  };
+
   const handleOpenFeed = () => {
     openDrawer(<LiveFeed className="h-full" />, <LiveFeedTitle />);
   };
@@ -186,7 +196,7 @@ const BoardPage = () => {
           </PageHeader>
 
           <div className="min-h-0 flex-1 overflow-hidden pt-6">
-            <KanbanBoard columns={columns} className="h-full" />
+            <KanbanBoard columns={columns} onTaskMove={handleTaskMove} className="h-full" />
           </div>
         </div>
       </ResizablePanel>

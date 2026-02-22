@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useDraggable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import {
   ChevronDown,
   ChevronRight,
@@ -43,6 +45,15 @@ export const KanbanCard = ({
 }: KanbanCardProps) => {
   const [expanded, setExpanded] = useState(false);
 
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: task.id,
+    disabled: isSubtask,
+  });
+
+  const style = transform
+    ? { transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.4 : 1 }
+    : undefined;
+
   const hasSubtasks = task.subtasks.length > 0;
   const showMetadata = task.priority === "high" || task.assignee;
 
@@ -56,10 +67,11 @@ export const KanbanCard = ({
   };
 
   return (
-    <div className="w-full">
+    <div ref={setNodeRef} style={style} className="w-full touch-none">
       <div
         onClick={handleCardClick}
-        className="bg-background cursor-pointer overflow-hidden rounded-lg border border-gray-900/10 p-3 transition-colors hover:bg-gray-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        {...(isSubtask ? {} : { ...listeners, ...attributes })}
+        className="bg-background cursor-grab overflow-hidden rounded-lg border border-gray-900/10 p-3 transition-colors hover:bg-gray-50 active:cursor-grabbing dark:border-zinc-700 dark:hover:bg-zinc-900"
       >
         {/* Parent title for subtasks */}
         {isSubtask && parentTitle && (

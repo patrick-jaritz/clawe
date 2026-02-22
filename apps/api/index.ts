@@ -37,12 +37,13 @@ function notionRequest(
   path: string,
   notionKey: string,
   body?: Record<string, unknown>,
+  method?: string,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: "api.notion.com",
       path,
-      method: body ? "POST" : "GET",
+      method: method ?? (body ? "POST" : "GET"),
       headers: {
         Authorization: `Bearer ${notionKey}`,
         "Notion-Version": "2022-06-28",
@@ -381,6 +382,51 @@ app.get("/api/tasks", async (_req, res) => {
   } catch (err) {
     console.error("Notion API error:", err);
     res.status(500).json({ error: "Failed to fetch tasks from Notion" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/tasks/:id/status
+// ---------------------------------------------------------------------------
+
+const NOTION_STATUS_MAP: Record<string, string> = {
+  inbox: "Not started",
+  assigned: "Not started",
+  in_progress: "In progress",
+  review: "Blocked",
+  done: "Done",
+};
+
+app.patch("/api/tasks/:id/status", async (req, res) => {
+  const notionKey = getNotionKey();
+  if (!notionKey) {
+    res.status(500).json({ error: "NOTION_API_KEY not found" });
+    return;
+  }
+
+  const { id } = req.params;
+  const { status } = req.body as { status: string };
+
+  if (!status || !NOTION_STATUS_MAP[status]) {
+    res.status(400).json({ error: `Invalid status: ${status}` });
+    return;
+  }
+
+  try {
+    await notionRequest(
+      `/v1/pages/${id}`,
+      notionKey,
+      {
+        properties: {
+          Status: { status: { name: NOTION_STATUS_MAP[status] } },
+        },
+      },
+      "PATCH",
+    );
+    res.json({ ok: true, status });
+  } catch (err) {
+    console.error("Failed to update Notion task status:", err);
+    res.status(500).json({ error: "Failed to update task status" });
   }
 });
 

@@ -54,7 +54,8 @@ export function CommandPalette() {
     if (!project) return;
 
     if (project.running) {
-      window.open(`http://localhost:${project.port}`, "_blank");
+      const hostname = window.location.hostname;
+      window.open(`http://${hostname}:${project.port}`, "_blank");
     } else {
       notify.info(`${project.name} is not running. Start it from the Projects page.`);
     }

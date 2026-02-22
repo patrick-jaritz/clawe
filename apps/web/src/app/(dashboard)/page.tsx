@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import * as React from "react";
 import Link from "next/link";
+import { mutate } from "swr";
 import {
   Card,
   CardContent,
@@ -26,8 +27,22 @@ import {
   Mail,
   Github,
   MessageCircle,
+  AlertTriangle,
+  Clock,
+  Zap,
+  CheckCheck,
 } from "lucide-react";
-import { useSystemHealth, useRecentIntel, useProjects } from "@/lib/api/local";
+import {
+  useSystemHealth,
+  useRecentIntel,
+  useProjects,
+  useTasks,
+  updateTaskStatus,
+  type LocalTask,
+} from "@/lib/api/local";
+import { cn } from "@clawe/ui/lib/utils";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -39,20 +54,20 @@ function getGreeting(): string {
 function formatDate(): string {
   const now = new Date();
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
   return `${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
 }
 
 function formatTimeAgo(dateStr: string): string {
   try {
     const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
+    const diffMs = Date.now() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
-
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays === 1) return "1d ago";
@@ -64,22 +79,205 @@ function formatTimeAgo(dateStr: string): string {
 
 function getSourceIcon(source: string) {
   switch (source.toLowerCase()) {
-    case "gmail":
-      return <Mail className="h-4 w-4" />;
-    case "github":
-      return <Github className="h-4 w-4" />;
+    case "gmail": return <Mail className="h-4 w-4" />;
+    case "github": return <Github className="h-4 w-4" />;
     case "reddit":
-    case "twitter":
-      return <MessageCircle className="h-4 w-4" />;
-    default:
-      return <Circle className="h-4 w-4" />;
+    case "twitter": return <MessageCircle className="h-4 w-4" />;
+    default: return <Circle className="h-4 w-4" />;
   }
 }
+
+// ── Deadline helpers ──────────────────────────────────────────────────────────
+
+const DBA_DEADLINE = new Date("2026-03-31T23:59:59+03:00"); // End of March, Jerusalem time
+
+function getDaysUntil(target: Date): number {
+  const now = new Date();
+  const diffMs = target.getTime() - now.getTime();
+  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+function getDeadlineColor(days: number): string {
+  if (days <= 14) return "text-red-600 dark:text-red-400";
+  if (days <= 30) return "text-yellow-600 dark:text-yellow-400";
+  return "text-green-600 dark:text-green-400";
+}
+
+function getDeadlineBg(days: number): string {
+  if (days <= 14) return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
+  if (days <= 30) return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
+  return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
+}
+
+// ── Situation Panel ───────────────────────────────────────────────────────────
+
+function SituationPanel({
+  daysLeft,
+  runningCount,
+  chunkCount,
+  lastIngest,
+  activeTasks,
+}: {
+  daysLeft: number;
+  runningCount: number;
+  chunkCount: number;
+  lastIngest?: string;
+  activeTasks: number;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* DBA Deadline */}
+      <div className={cn("flex items-center gap-3 rounded-lg border p-4", getDeadlineBg(daysLeft))}>
+        <AlertTriangle className={cn("h-5 w-5 flex-shrink-0", getDeadlineColor(daysLeft))} />
+        <div>
+          <p className={cn("text-lg font-bold leading-none", getDeadlineColor(daysLeft))}>
+            {daysLeft} days
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">DBA papers due Mar 31</p>
+        </div>
+      </div>
+
+      {/* Running Projects */}
+      <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/30">
+        <Zap className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+        <div>
+          <p className="text-lg font-bold leading-none text-blue-600 dark:text-blue-400">
+            {runningCount} running
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {activeTasks} task{activeTasks !== 1 ? "s" : ""} active
+          </p>
+        </div>
+      </div>
+
+      {/* Intel */}
+      <div className="flex items-center gap-3 rounded-lg border p-4">
+        <Brain className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+        <div>
+          <p className="text-lg font-bold leading-none">{chunkCount} chunks</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {lastIngest ? `Last: ${formatTimeAgo(lastIngest)}` : "No ingest yet"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Today's Focus ─────────────────────────────────────────────────────────────
+
+function TodaysFocus({ tasks }: { tasks: LocalTask[] }) {
+  const [toggling, setToggling] = React.useState<string | null>(null);
+
+  const activeTasks = tasks
+    .filter((t) => t.status !== "done")
+    .slice(0, 3);
+
+  const handleDone = async (task: LocalTask) => {
+    setToggling(task._id);
+    try {
+      await updateTaskStatus(task._id, "done");
+      mutate("/api/tasks");
+    } catch (err) {
+      console.error("Failed to mark done:", err);
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  if (activeTasks.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCheck className="h-5 w-5 text-green-600" />
+            Today's Focus
+          </CardTitle>
+          <CardDescription>Top tasks to move forward</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            All clear — no active tasks.{" "}
+            <Link href="/board" className="font-medium text-pink-600 hover:underline">
+              Check the board
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Today's Focus
+            </CardTitle>
+            <CardDescription>Top {activeTasks.length} active tasks</CardDescription>
+          </div>
+          <Link href="/board">
+            <Button variant="ghost" size="sm" className="text-xs">
+              Full board →
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {activeTasks.map((task) => (
+          <div
+            key={task._id}
+            className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/30"
+          >
+            <button
+              onClick={() => handleDone(task)}
+              disabled={toggling === task._id}
+              className="flex-shrink-0 text-muted-foreground transition-colors hover:text-green-600 disabled:opacity-50"
+              title="Mark done"
+            >
+              {toggling === task._id ? (
+                <Circle className="h-5 w-5 animate-pulse" />
+              ) : (
+                <Circle className="h-5 w-5" />
+              )}
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{task.title}</p>
+              {task.assignees?.[0] && (
+                <p className="text-xs text-muted-foreground">
+                  {task.assignees[0].emoji} {task.assignees[0].name}
+                </p>
+              )}
+            </div>
+            <Badge
+              variant="outline"
+              className={cn(
+                "flex-shrink-0 text-xs",
+                task.status === "in_progress" && "border-blue-300 text-blue-600",
+                task.status === "review" && "border-purple-300 text-purple-600",
+                task.status === "inbox" && "border-gray-300 text-gray-500",
+              )}
+            >
+              {task.status === "in_progress" ? "In Progress" :
+               task.status === "review" ? "Review" : "Inbox"}
+            </Badge>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const { data: healthData } = useSystemHealth();
   const { data: intelData } = useRecentIntel();
   const { data: projectsData } = useProjects();
+  const { data: tasks } = useTasks();
   const [hostname, setHostname] = React.useState("localhost");
 
   React.useEffect(() => {
@@ -87,6 +285,10 @@ export default function HomePage() {
   }, []);
 
   const runningProjects = projectsData?.projects?.filter((p) => p.running) || [];
+  const activeTasks = tasks?.filter((t) => t.status !== "done") || [];
+  const daysLeft = getDaysUntil(DBA_DEADLINE);
+  const lastIngestDate = intelData?.chunks?.[0]?.date;
+  const chunkCount = healthData?.services?.lancedb?.chunks ?? 0;
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -100,7 +302,19 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Top Grid: System Health + Running Projects */}
+      {/* Situation Panel */}
+      <SituationPanel
+        daysLeft={daysLeft}
+        runningCount={runningProjects.length}
+        chunkCount={chunkCount}
+        lastIngest={lastIngestDate}
+        activeTasks={activeTasks.length}
+      />
+
+      {/* Today's Focus */}
+      {tasks && <TodaysFocus tasks={tasks} />}
+
+      {/* System Health + Running Projects */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* System Health */}
         <Card>
@@ -163,7 +377,8 @@ export default function HomePage() {
 
                 <div className="mt-4 border-t pt-3">
                   <p className="text-xs text-muted-foreground">
-                    Next ingest: <span className="font-medium">{healthData.next_ingest}</span>
+                    Next ingest:{" "}
+                    <span className="font-medium">{healthData.next_ingest}</span>
                   </p>
                 </div>
               </>
@@ -219,7 +434,7 @@ export default function HomePage() {
       <Card>
         <CardHeader>
           <CardTitle>Recent Intelligence</CardTitle>
-          <CardDescription>Latest 5 ingested chunks</CardDescription>
+          <CardDescription>Latest ingested chunks</CardDescription>
         </CardHeader>
         <CardContent>
           {intelData && intelData.chunks.length > 0 ? (
@@ -260,7 +475,7 @@ export default function HomePage() {
       <Card>
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Jump to common tasks</CardDescription>
+          <CardDescription>Jump to common tasks — or press ⌘K</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6">

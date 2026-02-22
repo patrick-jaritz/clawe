@@ -3,10 +3,12 @@
  */
 
 import { Router } from "express";
-import { spawn, ChildProcess } from "child_process";
+import { spawn } from "child_process";
 import * as http from "http";
+import * as fs from "fs";
+import * as path from "path";
 import { EventEmitter } from "events";
-import { PROJECTS, type ProjectConfig } from "../projects-config.js";
+import { PROJECTS } from "../projects-config.js";
 
 const router = Router();
 
@@ -17,6 +19,47 @@ const logEmitters = new Map<string, EventEmitter>();
 
 // PATH for spawned processes
 const SPAWN_PATH = '/Users/centrick/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin';
+
+// ---------------------------------------------------------------------------
+// Persistent PID state — survives API restarts
+// ---------------------------------------------------------------------------
+const STATE_PATH = path.join(process.env.HOME ?? "/Users/centrick", ".clawe", "running-processes.json");
+
+function persistState() {
+  try {
+    const dir = path.dirname(STATE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const state: Record<string, number> = {};
+    for (const [id, pid] of runningProcesses) state[id] = pid;
+    fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
+  } catch (err) {
+    console.warn("[projects] Failed to persist PID state:", err);
+  }
+}
+
+function isPidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+// Load persisted PIDs on startup, verify each is still alive
+function loadPersistedState() {
+  try {
+    if (!fs.existsSync(STATE_PATH)) return;
+    const saved = JSON.parse(fs.readFileSync(STATE_PATH, "utf8")) as Record<string, number>;
+    let loaded = 0;
+    for (const [id, pid] of Object.entries(saved)) {
+      if (typeof pid === "number" && isPidAlive(pid)) {
+        runningProcesses.set(id, pid);
+        loaded++;
+      }
+    }
+    if (loaded > 0) console.log(`[projects] Restored ${loaded} running process(es) from disk`);
+  } catch (err) {
+    console.warn("[projects] Failed to load persisted PID state:", err);
+  }
+}
+
+loadPersistedState();
 
 // Max log lines per project
 const MAX_LOG_LINES = 100;
@@ -202,8 +245,9 @@ router.post("/:id/start", async (req, res) => {
       },
     });
 
-    // Store PID
+    // Store PID and persist to disk
     runningProcesses.set(id, child.pid!);
+    persistState();
 
     // Pipe stdout to logs
     child.stdout?.on('data', (data) => {
@@ -225,6 +269,7 @@ router.post("/:id/start", async (req, res) => {
     child.on('exit', (code) => {
       addLogLine(id, `Process exited with code ${code}`);
       runningProcesses.delete(id);
+      persistState();
     });
 
     // Detach so it keeps running
@@ -259,11 +304,13 @@ router.post("/:id/stop", (req, res) => {
       // Kill process group (negative PID)
       process.kill(-pid, 'SIGTERM');
       runningProcesses.delete(id);
+      persistState();
       res.json({ stopped: true });
     } catch (err) {
       console.error(`Error killing process ${pid}:`, err);
       // Still remove from map
       runningProcesses.delete(id);
+      persistState();
       res.json({ stopped: true, warning: "Process may not have been running" });
     }
   } catch (err) {

@@ -41,6 +41,7 @@ export type KanbanColumnDef = {
 export type KanbanBoardProps = {
   columns: KanbanColumnDef[];
   className?: string;
+  onTaskMove?: (taskId: string, newStatus: string) => Promise<void>;
 };
 
 // Variant styles (used internally by KanbanColumn)
