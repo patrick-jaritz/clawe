@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState } from "react";
 import { useTasks } from "@/lib/api/local";
 import type { LocalTask } from "@/lib/api/local";
