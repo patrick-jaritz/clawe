@@ -56,6 +56,17 @@ export const PROJECTS: ProjectConfig[] = [
     category: 'byl',
   },
   {
+    id: 'edgewell',
+    name: 'EdgeWell',
+    description: 'Nervous system & HRV training PWA. Evidence-based protocols for stress regulation, focus, and recovery.',
+    path: '/Users/centrick/clawd/coordination/projects/edgewell',
+    port: 3005,
+    startCmd: 'npm install --prefer-offline --silent && npm run dev',
+    techStack: ['Next.js', 'TypeScript', 'Tailwind'],
+    status: 'available',
+    category: 'external',
+  },
+  {
     id: 'essay-pipeline',
     name: 'Essay Pipeline',
     description: '5-stage multi-model essay generator: Brave → Claude → GPT-4o → Claude → Claude.',
