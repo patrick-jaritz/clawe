@@ -93,9 +93,18 @@ function deriveStatus(health: unknown, lastHeartbeatMs?: number): "online" | "of
 
 function resolveHeartbeat(data: Record<string, unknown> | null): number | undefined {
   if (!data) return undefined;
-  // Status JSONs use unix epoch "timestamp" (seconds) or ISO "last_updated"
+  // Aurel status: numeric unix epoch (seconds)
   if (typeof data.timestamp === "number") return data.timestamp * 1000;
-  if (typeof data.last_updated === "string") return new Date(data.last_updated).getTime();
+  // Soren status: ISO 8601 string timestamp
+  if (typeof data.timestamp === "string") {
+    const ms = new Date(data.timestamp).getTime();
+    if (!isNaN(ms)) return ms;
+  }
+  // Fallback: last_updated ISO string
+  if (typeof data.last_updated === "string") {
+    const ms = new Date(data.last_updated).getTime();
+    if (!isNaN(ms)) return ms;
+  }
   return undefined;
 }
 
