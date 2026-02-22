@@ -11,6 +11,7 @@ import { DrawerProvider } from "@/providers/drawer-provider";
 import { ChatPanelProvider } from "@/providers/chat-panel-provider";
 import { ChatPanel } from "@dashboard/chat-panel";
 import { useRequireOnboarding } from "@/hooks/use-onboarding-guard";
+import { CommandPalette } from "@/components/command-palette";
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -75,6 +76,7 @@ const DashboardLayout = ({ children, header }: DashboardLayoutProps) => {
             </DrawerProvider>
           </SidebarInset>
           <ChatPanel />
+          <CommandPalette />
         </SidebarProvider>
       </ChatPanelProvider>
     </SquadProvider>

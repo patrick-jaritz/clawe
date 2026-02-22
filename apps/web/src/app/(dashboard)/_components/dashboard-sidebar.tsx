@@ -18,6 +18,7 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@clawe/ui/components/sidebar";
+import { useProjects } from "@/lib/api/local";
 
 const slideVariants = {
   enterFromRight: { x: "100%", opacity: 0 },
@@ -30,11 +31,18 @@ const slideVariants = {
 const SidebarNavContent = () => {
   const router = useRouter();
   const { view, goToSettings } = useSidebarNav();
+  const { data: projectsData } = useProjects();
 
   const handleSettingsClick = () => {
     goToSettings();
     router.push("/settings");
   };
+
+  // Count running projects
+  const runningCount = React.useMemo(() => {
+    if (!projectsData?.projects) return 0;
+    return projectsData.projects.filter((p) => p.running).length;
+  }, [projectsData]);
 
   const navItems: NavItem[] = [
     {
@@ -61,6 +69,7 @@ const SidebarNavContent = () => {
       title: "Projects",
       url: "/projects",
       icon: LayoutGrid,
+      badge: runningCount > 0 ? String(runningCount) : undefined,
     },
     {
       title: "Settings",

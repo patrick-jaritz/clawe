@@ -40,6 +40,7 @@
     "aws-amplify": "^6.16.2",
     "aws-jwt-verify": "^5.1.1",
     "axios": "^1.13.4",
+    "cmdk": "^1.1.1",
     "convex": "^1.21.0",
     "framer-motion": "^12.29.0",
     "jose": "^6.1.3",
