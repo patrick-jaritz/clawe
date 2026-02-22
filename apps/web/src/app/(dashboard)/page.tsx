@@ -80,6 +80,11 @@ export default function HomePage() {
   const { data: healthData } = useSystemHealth();
   const { data: intelData } = useRecentIntel();
   const { data: projectsData } = useProjects();
+  const [hostname, setHostname] = React.useState("localhost");
+
+  React.useEffect(() => {
+    setHostname(window.location.hostname);
+  }, []);
 
   const runningProjects = projectsData?.projects?.filter((p) => p.running) || [];
 
@@ -187,7 +192,7 @@ export default function HomePage() {
                       <span className="font-medium">{project.name}</span>
                     </div>
                     <a
-                      href={`http://localhost:${project.port}`}
+                      href={`http://${hostname}:${project.port}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm text-muted-foreground hover:text-foreground"
@@ -282,7 +287,7 @@ export default function HomePage() {
 
             <Button variant="outline" asChild>
               <a
-                href="http://localhost:3016"
+                href={`http://${hostname}:3016`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2"
@@ -294,7 +299,7 @@ export default function HomePage() {
 
             <Button variant="outline" asChild>
               <a
-                href="http://localhost:3007"
+                href={`http://${hostname}:3007`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2"

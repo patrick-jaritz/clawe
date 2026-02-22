@@ -81,9 +81,22 @@ function readJsonFile(filePath: string): Record<string, unknown> | null {
   }
 }
 
-function deriveStatus(health: unknown): "online" | "offline" {
+const AGENT_STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
+function deriveStatus(health: unknown, lastHeartbeatMs?: number): "online" | "offline" {
+  if (lastHeartbeatMs !== undefined) {
+    if (Date.now() - lastHeartbeatMs > AGENT_STALE_THRESHOLD_MS) return "offline";
+  }
   if (health === "green" || health === "online") return "online";
   return "offline";
+}
+
+function resolveHeartbeat(data: Record<string, unknown> | null): number | undefined {
+  if (!data) return undefined;
+  // Status JSONs use unix epoch "timestamp" (seconds) or ISO "last_updated"
+  if (typeof data.timestamp === "number") return data.timestamp * 1000;
+  if (typeof data.last_updated === "string") return new Date(data.last_updated).getTime();
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,13 +165,36 @@ app.get("/api/system/health", async (_req, res) => {
     lanceDbOk = false;
   }
 
+  // Compute next 5:00 AM Jerusalem time dynamically
+  function nextIngestLabel(): string {
+    try {
+      const tz = "Asia/Jerusalem";
+      const now = new Date();
+      // Build today's 5:00 AM in Jerusalem
+      const todayStr = now.toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
+      const candidate = new Date(`${todayStr}T05:00:00`);
+      // Adjust for Jerusalem offset
+      const tzOffset = new Date(candidate.toLocaleString("en-US", { timeZone: tz })).getTime() - candidate.getTime();
+      const next5am = new Date(candidate.getTime() - tzOffset);
+      // If already past, add 1 day
+      const target = next5am <= now ? new Date(next5am.getTime() + 24 * 60 * 60 * 1000) : next5am;
+      const diffMs = target.getTime() - now.getTime();
+      const diffH = Math.floor(diffMs / 3600000);
+      const diffM = Math.floor((diffMs % 3600000) / 60000);
+      if (diffH === 0) return `in ${diffM}m (5:00 AM)`;
+      return `in ${diffH}h ${diffM}m (5:00 AM)`;
+    } catch {
+      return "5:00 AM";
+    }
+  }
+
   res.json({
     services: {
       api: { ok: true, label: "CLAWE API" },
       qdrant: { ok: qdrantOk, label: "Qdrant :6333" },
       lancedb: { ok: lanceDbOk, label: "LanceDB", chunks: chunkCount },
     },
-    next_ingest: "5:00 AM",
+    next_ingest: nextIngestLabel(),
   });
 });
 
@@ -200,6 +236,9 @@ app.get("/api/agents", (_req, res) => {
     path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
   );
 
+  const aurelHeartbeat = resolveHeartbeat(aurelData);
+  const sorenHeartbeat = resolveHeartbeat(sorenData);
+
   const agents = [
     {
       _id: "aurel",
@@ -207,14 +246,12 @@ app.get("/api/agents", (_req, res) => {
       role: "Chief of Staff",
       emoji: "🏛️",
       sessionKey: "agent:main:main",
-      status: aurelData ? deriveStatus(aurelData.health) : "offline",
+      status: aurelData ? deriveStatus(aurelData.health, aurelHeartbeat) : "offline",
       currentActivity:
         (aurelData?.active_tasks as unknown[])?.[0] !== undefined
           ? String((aurelData!.active_tasks as unknown[])[0])
           : null,
-      lastHeartbeat: aurelData?.last_updated
-        ? new Date(String(aurelData.last_updated)).getTime()
-        : Date.now(),
+      lastHeartbeat: aurelHeartbeat ?? null,
     },
     {
       _id: "soren",
@@ -222,14 +259,12 @@ app.get("/api/agents", (_req, res) => {
       role: "Strategist",
       emoji: "🧠",
       sessionKey: "agent:soren:main",
-      status: sorenData ? deriveStatus(sorenData.health) : "offline",
+      status: sorenData ? deriveStatus(sorenData.health, sorenHeartbeat) : "offline",
       currentActivity:
         (sorenData?.active_tasks as unknown[])?.[0] !== undefined
           ? String((sorenData!.active_tasks as unknown[])[0])
           : null,
-      lastHeartbeat: sorenData?.last_updated
-        ? new Date(String(sorenData.last_updated)).getTime()
-        : Date.now(),
+      lastHeartbeat: sorenHeartbeat ?? null,
     },
   ];
 
