@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings } from "lucide-react";
+import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { NavMain, type NavItem } from "./nav-main";
@@ -70,6 +70,11 @@ const SidebarNavContent = () => {
       url: "/projects",
       icon: LayoutGrid,
       badge: runningCount > 0 ? String(runningCount) : undefined,
+    },
+    {
+      title: "Crons",
+      url: "/crons",
+      icon: Timer,
     },
     {
       title: "Settings",

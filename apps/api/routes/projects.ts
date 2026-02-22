@@ -5,6 +5,7 @@
 import { Router } from "express";
 import { spawn } from "child_process";
 import * as http from "http";
+import * as net from "net";
 import * as fs from "fs";
 import * as path from "path";
 import { EventEmitter } from "events";
@@ -12,10 +13,25 @@ import { PROJECTS } from "../projects-config.js";
 
 const router = Router();
 
-// Store running process PIDs and log buffers
+// Store running process PIDs, start times, and log buffers
 const runningProcesses = new Map<string, number>();
+const startTimes = new Map<string, number>(); // epoch ms
 const logBuffers = new Map<string, string[]>();
 const logEmitters = new Map<string, EventEmitter>();
+
+/** Check if a port is in use by ANY process (not just ours) */
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      resolve(err.code === "EADDRINUSE");
+    });
+    server.once("listening", () => {
+      server.close(() => resolve(false));
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
 
 // PATH for spawned processes
 const SPAWN_PATH = '/Users/centrick/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin';
@@ -29,8 +45,10 @@ function persistState() {
   try {
     const dir = path.dirname(STATE_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const state: Record<string, number> = {};
-    for (const [id, pid] of runningProcesses) state[id] = pid;
+    const state: Record<string, { pid: number; startedAt: number }> = {};
+    for (const [id, pid] of runningProcesses) {
+      state[id] = { pid, startedAt: startTimes.get(id) ?? Date.now() };
+    }
     fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
   } catch (err) {
     console.warn("[projects] Failed to persist PID state:", err);
@@ -45,11 +63,15 @@ function isPidAlive(pid: number): boolean {
 function loadPersistedState() {
   try {
     if (!fs.existsSync(STATE_PATH)) return;
-    const saved = JSON.parse(fs.readFileSync(STATE_PATH, "utf8")) as Record<string, number>;
+    const saved = JSON.parse(fs.readFileSync(STATE_PATH, "utf8")) as
+      Record<string, number | { pid: number; startedAt: number }>;
     let loaded = 0;
-    for (const [id, pid] of Object.entries(saved)) {
+    for (const [id, entry] of Object.entries(saved)) {
+      const pid = typeof entry === "number" ? entry : entry.pid;
+      const startedAt = typeof entry === "object" ? entry.startedAt : Date.now();
       if (typeof pid === "number" && isPidAlive(pid)) {
         runningProcesses.set(id, pid);
+        startTimes.set(id, startedAt);
         loaded++;
       }
     }
@@ -120,6 +142,7 @@ router.get("/", async (_req, res) => {
         return {
           ...project,
           running,
+          startedAt: running ? (startTimes.get(project.id) ?? null) : null,
         };
       })
     );
@@ -230,6 +253,17 @@ router.post("/:id/start", async (req, res) => {
       return;
     }
 
+    // Check if port is in use by another process (conflict detection)
+    const portBusy = await isPortInUse(project.port);
+    if (portBusy) {
+      res.status(409).json({
+        error: `Port ${project.port} is already in use by another process. Stop the conflicting process first.`,
+        portConflict: true,
+        port: project.port,
+      });
+      return;
+    }
+
     // Clear old logs
     logBuffers.set(id, []);
 
@@ -245,8 +279,9 @@ router.post("/:id/start", async (req, res) => {
       },
     });
 
-    // Store PID and persist to disk
+    // Store PID + start time, persist to disk
     runningProcesses.set(id, child.pid!);
+    startTimes.set(id, Date.now());
     persistState();
 
     // Pipe stdout to logs
@@ -269,6 +304,7 @@ router.post("/:id/start", async (req, res) => {
     child.on('exit', (code) => {
       addLogLine(id, `Process exited with code ${code}`);
       runningProcesses.delete(id);
+      startTimes.delete(id);
       persistState();
     });
 

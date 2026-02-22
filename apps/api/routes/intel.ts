@@ -116,10 +116,21 @@ router.get("/stats", async (req, res) => {
     const by_source = await intelStatsBySource();
     const last_ingest = await intelLastIngest();
 
+    // Compute per-source last ingest date
+    const { chunks: all } = await intelListAll(1, 10000, "all");
+    const source_last_dates: Record<string, string> = {};
+    for (const chunk of all) {
+      const existing = source_last_dates[chunk.source];
+      if (!existing || chunk.date > existing) {
+        source_last_dates[chunk.source] = chunk.date;
+      }
+    }
+
     res.json({
       total,
       by_source,
       last_ingest,
+      source_last_dates,
     });
   } catch (err) {
     console.error("Error fetching intel stats:", err);

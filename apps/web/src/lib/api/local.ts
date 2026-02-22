@@ -26,7 +26,8 @@ export type LocalTask = {
   title: string;
   description: string;
   status: string;
-  priority: string;
+  priority: "low" | "medium" | "high" | "normal";
+  dueDate?: string | null;
   assigneeIds: string[];
   assignees: { _id: string; name: string; emoji: string }[];
   subtasks: unknown[];
@@ -73,6 +74,7 @@ export type IntelStats = {
   total: number;
   by_source: Record<string, number>;
   last_ingest: string | null;
+  source_last_dates?: Record<string, string>;
 };
 
 export type IntelChunksResponse = {
@@ -185,6 +187,7 @@ export type Project = {
   techStack: string[];
   status: 'available' | 'no-ui' | 'planned';
   running: boolean;
+  startedAt?: number | null;
   category: 'byl' | 'tools' | 'intelligence' | 'external';
 };
 
@@ -379,4 +382,55 @@ export function useNotifications() {
   return useSWR<NotificationsResponse>("/api/notifications", fetcher, {
     refreshInterval: 60_000,
   });
+}
+
+// ── Cron Monitor ──────────────────────────────────────────────────────────────
+
+export type CronJob = {
+  id: string;
+  name: string;
+  schedule: string;
+  next: string;
+  last: string;
+  status: string;
+  target: string;
+  agent: string;
+};
+
+export type CronsResponse = {
+  crons: CronJob[];
+  total: number;
+};
+
+export function useCrons() {
+  return useSWR<CronsResponse>("/api/crons", fetcher, {
+    refreshInterval: 60_000,
+  });
+}
+
+// ── Daily Digest ──────────────────────────────────────────────────────────────
+
+export type DigestResponse = {
+  brief: string;
+  daysLeft: number;
+  totalChunks: number;
+  generated: string;
+};
+
+export async function generateDailyDigest(): Promise<DigestResponse> {
+  const res = await fetch("/api/daily-digest", { method: "POST" });
+  if (!res.ok) throw new Error("Failed to generate digest");
+  return res.json() as Promise<DigestResponse>;
+}
+
+// ── Inline task creation ──────────────────────────────────────────────────────
+
+export async function createNotionTask(title: string, status: string): Promise<{ id: string }> {
+  const res = await fetch("/api/tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, status }),
+  });
+  if (!res.ok) throw new Error("Failed to create task");
+  return res.json() as Promise<{ id: string }>;
 }

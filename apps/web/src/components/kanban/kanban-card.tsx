@@ -30,12 +30,27 @@ export type KanbanCardProps = {
   parentTitle?: string;
 };
 
-const priorityStyles = {
-  high: "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400",
-  medium:
-    "bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400",
-  low: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+const priorityStyles: Record<string, string> = {
+  high: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400",
+  medium: "bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400",
+  low: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500",
 };
+
+function formatDueDate(iso: string): { label: string; urgent: boolean; overdue: boolean } {
+  const due = new Date(iso);
+  const now = new Date();
+  const diffMs = due.getTime() - now.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return { label: `${Math.abs(diffDays)}d overdue`, urgent: true, overdue: true };
+  if (diffDays === 0) return { label: "due today", urgent: true, overdue: false };
+  if (diffDays === 1) return { label: "due tomorrow", urgent: true, overdue: false };
+  if (diffDays <= 7) return { label: `in ${diffDays}d`, urgent: false, overdue: false };
+  return {
+    label: due.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    urgent: false,
+    overdue: false,
+  };
+}
 
 export const KanbanCard = ({
   task,
@@ -55,7 +70,8 @@ export const KanbanCard = ({
     : undefined;
 
   const hasSubtasks = task.subtasks.length > 0;
-  const showMetadata = task.priority === "high" || task.assignee;
+  const dueDateInfo = task.dueDate ? formatDueDate(task.dueDate) : null;
+  const showMetadata = (task.priority && task.priority !== "low") || task.assignee || dueDateInfo;
 
   const handleCardClick = () => {
     onTaskClick(task);
@@ -120,8 +136,8 @@ export const KanbanCard = ({
               <div />
             )}
 
-            <div className="flex items-center gap-2">
-              {task.priority === "high" && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {task.priority && task.priority !== "low" && priorityStyles[task.priority] && (
                 <span
                   className={cn(
                     "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
@@ -129,6 +145,22 @@ export const KanbanCard = ({
                   )}
                 >
                   {task.priority}
+                </span>
+              )}
+
+              {dueDateInfo && (
+                <span
+                  className={cn(
+                    "flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                    dueDateInfo.overdue
+                      ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+                      : dueDateInfo.urgent
+                      ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400"
+                      : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                  )}
+                >
+                  <Circle className="h-2 w-2 fill-current" />
+                  {dueDateInfo.label}
                 </span>
               )}
 

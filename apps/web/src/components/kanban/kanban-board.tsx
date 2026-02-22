@@ -17,7 +17,7 @@ import { KanbanCard } from "./kanban-card";
 import { TaskDetailModal } from "./task-detail-modal";
 import type { KanbanBoardProps, KanbanTask } from "./types";
 
-export const KanbanBoard = ({ columns, onTaskMove, className }: KanbanBoardProps) => {
+export const KanbanBoard = ({ columns, onTaskMove, onTaskCreate, className }: KanbanBoardProps) => {
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null);
   const [activeTask, setActiveTask] = useState<KanbanTask | null>(null);
 
@@ -83,6 +83,7 @@ export const KanbanBoard = ({ columns, onTaskMove, className }: KanbanBoardProps
                 key={column.id}
                 column={column}
                 onTaskClick={handleTaskClick}
+                onTaskCreate={onTaskCreate}
               />
             ))}
           </div>

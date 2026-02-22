@@ -19,6 +19,7 @@ export type KanbanTask = {
   status?: "inbox" | "assigned" | "in_progress" | "review" | "done";
   priority: "low" | "medium" | "high";
   assignee?: string;
+  dueDate?: string | null;   // ISO date string from Notion
   subtasks: KanbanSubtask[];
   documentCount?: number;
 };
@@ -42,6 +43,7 @@ export type KanbanBoardProps = {
   columns: KanbanColumnDef[];
   className?: string;
   onTaskMove?: (taskId: string, newStatus: string) => Promise<void>;
+  onTaskCreate?: (columnId: string, title: string) => Promise<void>;
 };
 
 // Variant styles (used internally by KanbanColumn)

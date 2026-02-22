@@ -31,6 +31,7 @@ import {
   triggerIngest,
   getIntelChunk,
   askIntel,
+  generateDailyDigest,
   type FullIntelChunk,
   type IntelSource,
 } from "@/lib/api/local";
@@ -49,6 +50,7 @@ import {
   BookOpen,
   Send,
   CornerDownLeft,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@clawe/ui/lib/utils";
 
@@ -343,6 +345,25 @@ const AskMode = () => {
 const IntelligencePage = () => {
   const [mode, setMode] = useState<"browse" | "ask">("browse");
   const [selectedSource, setSelectedSource] = useState("all");
+  const [brief, setBrief] = useState("");
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefDismissed, setBriefDismissed] = useState(false);
+
+  // Auto-generate brief on first load
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      setBriefLoading(true);
+      try {
+        const result = await generateDailyDigest();
+        if (!cancelled) setBrief(result.brief);
+      } catch { /* silent fail */ }
+      finally { if (!cancelled) setBriefLoading(false); }
+    };
+    run();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -515,6 +536,35 @@ const IntelligencePage = () => {
       {mode === "ask" && <AskMode />}
 
       <div className={cn("space-y-6", mode === "ask" && "hidden")}>
+        {/* Auto-Brief */}
+        {!briefDismissed && (brief || briefLoading) && (
+          <Card className="p-4 border-purple-200 bg-purple-50/50 dark:border-purple-900 dark:bg-purple-950/20">
+            <div className="flex items-start gap-3">
+              <Sparkles className="h-4 w-4 text-purple-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400 mb-1">
+                  Intelligence Brief
+                </p>
+                {briefLoading ? (
+                  <div className="flex gap-1 text-muted-foreground">
+                    <span className="animate-bounce text-sm">·</span>
+                    <span className="animate-bounce text-sm" style={{ animationDelay: "150ms" }}>·</span>
+                    <span className="animate-bounce text-sm" style={{ animationDelay: "300ms" }}>·</span>
+                  </div>
+                ) : (
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{brief}</p>
+                )}
+              </div>
+              <button
+                onClick={() => setBriefDismissed(true)}
+                className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </Card>
+        )}
+
         {/* Ingestion Status Bar */}
         {ingestStatus && (
           <Card className="p-4">
@@ -594,23 +644,37 @@ const IntelligencePage = () => {
             {Object.entries(sourceLabels).map(([source, label]) => {
               const count = stats?.by_source[source] || 0;
               const showCount = source !== "all" && count > 0;
+              const lastDate = source !== "all" ? stats?.source_last_dates?.[source] : undefined;
+              const staleHours = lastDate
+                ? (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60)
+                : null;
+              const isStale = staleHours !== null && staleHours > 72;
               
               return (
-                <Button
-                  key={source}
-                  variant={selectedSource === source ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handleSourceChange(source)}
-                  className="whitespace-nowrap"
-                >
-                  {sourceIcons[source] && (
-                    <span className="mr-1.5">{sourceIcons[source]}</span>
+                <div key={source} className="flex flex-col items-center gap-0.5">
+                  <Button
+                    variant={selectedSource === source ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleSourceChange(source)}
+                    className="whitespace-nowrap"
+                  >
+                    {sourceIcons[source] && (
+                      <span className="mr-1.5">{sourceIcons[source]}</span>
+                    )}
+                    {label}
+                    {showCount && (
+                      <span className="ml-1.5 opacity-70">({count})</span>
+                    )}
+                  </Button>
+                  {lastDate && source !== "all" && (
+                    <span className={cn(
+                      "text-[10px]",
+                      isStale ? "text-orange-500" : "text-muted-foreground/60"
+                    )}>
+                      {isStale ? "stale" : `${Math.floor(staleHours!)}h ago`}
+                    </span>
                   )}
-                  {label}
-                  {showCount && (
-                    <span className="ml-1.5 opacity-70">({count})</span>
-                  )}
-                </Button>
+                </div>
               );
             })}
           </div>

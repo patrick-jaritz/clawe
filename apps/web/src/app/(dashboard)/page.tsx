@@ -31,6 +31,10 @@ import {
   Clock,
   Zap,
   CheckCheck,
+  Sparkles,
+  RefreshCw,
+  Send,
+  Timer,
 } from "lucide-react";
 import {
   useSystemHealth,
@@ -38,6 +42,8 @@ import {
   useProjects,
   useTasks,
   updateTaskStatus,
+  generateDailyDigest,
+  askIntel,
   type LocalTask,
 } from "@/lib/api/local";
 import { cn } from "@clawe/ui/lib/utils";
@@ -107,6 +113,134 @@ function getDeadlineBg(days: number): string {
   if (days <= 14) return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
   if (days <= 30) return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
   return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
+}
+
+function formatUptime(startedAt: number): string {
+  const diff = Date.now() - startedAt;
+  const mins = Math.floor(diff / 60000);
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+  if (days > 0) return `${days}d ${hrs % 24}h`;
+  if (hrs > 0) return `${hrs}h ${mins % 60}m`;
+  return `${mins}m`;
+}
+
+// ── Quick Ask (Home RAG widget) ───────────────────────────────────────────────
+
+function QuickAsk() {
+  const [query, setQuery] = React.useState("");
+  const [answer, setAnswer] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [asked, setAsked] = React.useState(false);
+  const abortRef = React.useRef<(() => void) | null>(null);
+
+  const handleAsk = () => {
+    const q = query.trim();
+    if (!q || loading) return;
+    setAnswer("");
+    setAsked(true);
+    setLoading(true);
+
+    const abort = askIntel(q, {
+      onSources: () => {},
+      onDelta: (text) => setAnswer((prev) => prev + text),
+      onDone: () => { setLoading(false); abortRef.current = null; },
+      onError: (msg) => { setAnswer(`Error: ${msg}`); setLoading(false); },
+    });
+    abortRef.current = abort;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-purple-500" />
+          Quick Ask
+        </CardTitle>
+        <CardDescription>Ask your knowledge base · powered by RAG + Claude</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex gap-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAsk()}
+            placeholder="Ask anything about your knowledge base..."
+            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          <Button size="sm" onClick={handleAsk} disabled={!query.trim() || loading}>
+            {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </Button>
+        </div>
+        {asked && (
+          <div className="rounded-lg border bg-muted/30 p-3 text-sm leading-relaxed min-h-[60px]">
+            {answer || (loading && (
+              <span className="flex gap-1 text-muted-foreground">
+                <span className="animate-bounce">·</span>
+                <span className="animate-bounce" style={{ animationDelay: "150ms" }}>·</span>
+                <span className="animate-bounce" style={{ animationDelay: "300ms" }}>·</span>
+              </span>
+            ))}
+            {loading && answer && (
+              <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-current" />
+            )}
+          </div>
+        )}
+        {!asked && (
+          <div className="flex flex-wrap gap-2">
+            {["What's in my recent emails?", "Latest GitHub updates?", "BYL progress?"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setQuery(s)}
+                className="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Daily Digest button ───────────────────────────────────────────────────────
+
+function DailyDigestButton() {
+  const [brief, setBrief] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [shown, setShown] = React.useState(false);
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    try {
+      const result = await generateDailyDigest();
+      setBrief(result.brief);
+      setShown(true);
+    } catch {
+      setBrief("Failed to generate brief. Check API.");
+      setShown(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Button variant="outline" size="sm" onClick={handleGenerate} disabled={loading}>
+        {loading ? (
+          <><RefreshCw className="mr-1.5 h-4 w-4 animate-spin" /> Generating...</>
+        ) : (
+          <><Sparkles className="mr-1.5 h-4 w-4" /> Morning Brief</>
+        )}
+      </Button>
+      {shown && brief && (
+        <div className="rounded-lg border bg-muted/30 p-3 text-sm leading-relaxed whitespace-pre-wrap">
+          {brief}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Situation Panel ───────────────────────────────────────────────────────────
@@ -293,13 +427,14 @@ export default function HomePage() {
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header */}
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
             {getGreeting()}, Patrick
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">{formatDate()}</p>
         </div>
+        <DailyDigestButton />
       </div>
 
       {/* Situation Panel */}
@@ -402,15 +537,21 @@ export default function HomePage() {
                     key={project.id}
                     className="flex items-center justify-between rounded-lg border p-3"
                   >
-                    <div className="flex items-center gap-2">
-                      <Circle className="h-2 w-2 fill-green-600 text-green-600" />
-                      <span className="font-medium">{project.name}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Circle className="h-2 w-2 flex-shrink-0 fill-green-600 text-green-600" />
+                      <span className="font-medium truncate">{project.name}</span>
+                      {project.startedAt && (
+                        <span className="flex items-center gap-0.5 text-xs text-muted-foreground flex-shrink-0">
+                          <Timer className="h-3 w-3" />
+                          {formatUptime(project.startedAt)}
+                        </span>
+                      )}
                     </div>
                     <a
                       href={`http://${hostname}:${project.port}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-muted-foreground hover:text-foreground"
+                      className="text-sm text-muted-foreground hover:text-foreground flex-shrink-0 ml-2"
                     >
                       :{project.port}
                     </a>
@@ -470,6 +611,9 @@ export default function HomePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Quick Ask */}
+      <QuickAsk />
 
       {/* Quick Actions */}
       <Card>

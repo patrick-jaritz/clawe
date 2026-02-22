@@ -365,12 +365,30 @@ app.get("/api/tasks", async (_req, res) => {
         assignees = [{ _id: "soren", name: "Søren", emoji: "🧠" }];
       }
 
+      // Extract priority
+      const priorityProp = props.Priority ?? props.priority;
+      const priorityName = (
+        (priorityProp as Record<string, unknown>)?.select as Record<string, unknown> | undefined
+      )?.name?.toString().toLowerCase() ?? "";
+      const priority: "low" | "medium" | "high" =
+        priorityName.includes("high") ? "high"
+        : priorityName.includes("medium") ? "medium"
+        : priorityName.includes("low") ? "low"
+        : "low";
+
+      // Extract due date
+      const dueProp = props["Due date"] ?? props["Due"] ?? props.due_date ?? props.Date;
+      const dueDate = (
+        (dueProp as Record<string, unknown>)?.date as Record<string, unknown> | undefined
+      )?.start?.toString() ?? null;
+
       return {
         _id: p.id as string,
         title,
         description: "",
         status,
-        priority: "normal",
+        priority,
+        dueDate,
         assigneeIds,
         assignees,
         subtasks: [],
@@ -382,6 +400,36 @@ app.get("/api/tasks", async (_req, res) => {
   } catch (err) {
     console.error("Notion API error:", err);
     res.status(500).json({ error: "Failed to fetch tasks from Notion" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks — create a new task in Notion TODAY database
+// ---------------------------------------------------------------------------
+
+app.post("/api/tasks", async (req, res) => {
+  const notionKey = getNotionKey();
+  if (!notionKey) { res.status(500).json({ error: "NOTION_API_KEY not found" }); return; }
+
+  const { title, status = "inbox" } = req.body as { title: string; status?: string };
+  if (!title?.trim()) { res.status(400).json({ error: "title is required" }); return; }
+
+  const notionStatus = NOTION_STATUS_MAP[status] ?? "Not started";
+  try {
+    const result = (await notionRequest(
+      "/v1/pages",
+      notionKey,
+      {
+        parent: { database_id: NOTION_TODAY_DB },
+        properties: {
+          Name: { title: [{ text: { content: title.trim() } }] },
+          Status: { status: { name: notionStatus } },
+        },
+      },
+    )) as Record<string, unknown>;
+    res.json({ id: result.id as string });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create task" });
   }
 });
 
@@ -476,6 +524,116 @@ app.get("/api/activities", (_req, res) => {
   } catch (err) {
     console.error("Error reading sync files:", err);
     res.json([]);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/crons — list all OpenClaw cron jobs
+// ---------------------------------------------------------------------------
+
+app.get("/api/crons", (_req, res) => {
+  try {
+    const raw = execSync("openclaw cron list 2>/dev/null", { encoding: "utf8", timeout: 5000 });
+    const lines = raw.split("\n");
+
+    // Find the data lines (skip header, empty lines, warning blocks)
+    const dataLines = lines.filter((l) => {
+      const trimmed = l.trim();
+      return (
+        trimmed.length > 0 &&
+        !trimmed.startsWith("ID ") &&
+        !trimmed.startsWith("─") &&
+        !trimmed.startsWith("│") &&
+        !trimmed.startsWith("◇") &&
+        !trimmed.startsWith("├") &&
+        !trimmed.startsWith("└")
+      );
+    });
+
+    const crons = dataLines.map((line) => {
+      // Tab-separated or space-separated columns:
+      // ID  Name  Schedule  Next  Last  Status  Target  Agent
+      const parts = line.split(/\t|\s{2,}/);
+      return {
+        id: parts[0]?.trim() ?? "",
+        name: parts[1]?.trim() ?? "",
+        schedule: parts[2]?.trim() ?? "",
+        next: parts[3]?.trim() ?? "",
+        last: parts[4]?.trim() ?? "",
+        status: parts[5]?.trim() ?? "",
+        target: parts[6]?.trim() ?? "",
+        agent: parts[7]?.trim() ?? "",
+      };
+    }).filter((c) => c.id.length > 0 && c.name.length > 0);
+
+    res.json({ crons, total: crons.length });
+  } catch (err) {
+    console.error("Error listing crons:", err);
+    res.status(500).json({ error: "Failed to list crons", crons: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/daily-digest — generate and optionally send a morning brief
+// ---------------------------------------------------------------------------
+
+app.post("/api/daily-digest", async (_req, res) => {
+  try {
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    const { intelCount: getIntelCount, intelSearch } = await import("./lib/lancedb.js");
+    const { embed } = await import("./lib/openai.js");
+
+    const HOME = process.env.HOME ?? "/Users/centrick";
+
+    // Gather data
+    const DBA_DEADLINE = new Date("2026-03-31T23:59:00+02:00");
+    const daysLeft = Math.ceil((DBA_DEADLINE.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+    const totalChunks = await getIntelCount();
+
+    // Get recent intel chunks (semantic search for "today recent news updates")
+    let recentContext = "";
+    try {
+      const queryVec = await embed("recent news updates decisions progress");
+      const results = await intelSearch(queryVec, 5);
+      recentContext = results
+        .map((r) => `- ${r.title} (${r.source}): ${r.content.slice(0, 200)}`)
+        .join("\n");
+    } catch { /* ignore */ }
+
+    // Read Aurel status
+    let aurelStatus = "";
+    try {
+      const s = JSON.parse(fs.readFileSync(path.join(HOME, "clawd/aurel/status/aurel.json"), "utf8"));
+      aurelStatus = `Active: ${(s.active_tasks ?? []).join(", ") || "none"}. Completed: ${(s.completed_today ?? []).slice(0, 3).join(", ") || "none"}.`;
+    } catch { /* ignore */ }
+
+    const systemPrompt = `You are Aurel, Chief of Staff for CENTAUR. Generate a sharp morning brief for Patrick.
+Format: 3 bullet points max. Each bullet = one key fact or action. Be direct.
+No fluff. No headers. Just bullets starting with •`;
+
+    const userMsg = `Context:
+- DBA papers due in ${daysLeft} days (March 31, 2026)
+- Intelligence DB: ${totalChunks} chunks
+- Agent status: ${aurelStatus}
+- Recent intel:
+${recentContext || "(no recent intel)"}
+
+Generate the morning brief.`;
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const msg = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 300,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMsg }],
+    });
+
+    const brief = (msg.content[0] as { text: string }).text;
+    res.json({ brief, daysLeft, totalChunks, generated: new Date().toISOString() });
+  } catch (err) {
+    console.error("Daily digest error:", err);
+    res.status(500).json({ error: String(err) });
   }
 });
 

@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import { mutate } from "swr";
-import { useTasks, updateTaskStatus } from "@/lib/api/local";
+import { useTasks, updateTaskStatus, createNotionTask } from "@/lib/api/local";
 import type { LocalTask } from "@/lib/api/local";
 import { Bell } from "lucide-react";
 import { Button } from "@clawe/ui/components/button";
@@ -50,6 +50,7 @@ function mapTask(task: LocalTask): KanbanTask {
     description: task.description,
     status: task.status as KanbanTask["status"],
     priority: mapPriority(task.priority),
+    dueDate: task.dueDate ?? undefined,
     assignee: task.assignees?.[0]
       ? `${task.assignees[0].emoji || ""} ${task.assignees[0].name}`.trim()
       : undefined,
@@ -145,6 +146,15 @@ const BoardPage = () => {
     }
   };
 
+  const handleTaskCreate = async (columnId: string, title: string) => {
+    try {
+      await createNotionTask(title, columnId);
+      mutate("/api/tasks");
+    } catch (err) {
+      console.error("Failed to create task:", err);
+    }
+  };
+
   const handleOpenFeed = () => {
     openDrawer(<LiveFeed className="h-full" />, <LiveFeedTitle />);
   };
@@ -196,7 +206,7 @@ const BoardPage = () => {
           </PageHeader>
 
           <div className="min-h-0 flex-1 overflow-hidden pt-6">
-            <KanbanBoard columns={columns} onTaskMove={handleTaskMove} className="h-full" />
+            <KanbanBoard columns={columns} onTaskMove={handleTaskMove} onTaskCreate={handleTaskCreate} className="h-full" />
           </div>
         </div>
       </ResizablePanel>
