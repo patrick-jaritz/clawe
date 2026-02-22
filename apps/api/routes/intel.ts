@@ -4,6 +4,7 @@
 
 import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
+import Anthropic from "@anthropic-ai/sdk";
 import {
   intelListAll,
   intelInsert,
@@ -11,6 +12,7 @@ import {
   intelStatsBySource,
   intelLastIngest,
   intelGetById,
+  intelSearch,
 } from "../lib/lancedb.js";
 import { embed } from "../lib/openai.js";
 
@@ -269,6 +271,93 @@ router.post("/ingest/run", async (req, res) => {
   } catch (err) {
     console.error("Error starting ingestion:", err);
     res.status(500).json({ error: "Failed to start ingestion" });
+  }
+});
+
+// POST /api/intel/ask  — RAG chat: embed query → vector search → Claude stream
+router.post("/ask", async (req, res) => {
+  const { question, top_k = 5 } = req.body as { question: string; top_k?: number };
+
+  if (!question?.trim()) {
+    res.status(400).json({ error: "question is required" });
+    return;
+  }
+
+  // Set SSE headers for streaming
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  const sendEvent = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    // 1. Embed the query
+    const queryVec = await embed(question);
+
+    // 2. Vector search LanceDB
+    const results = await intelSearch(queryVec, top_k);
+
+    if (results.length === 0) {
+      sendEvent("error", { message: "No relevant intelligence found for this question." });
+      res.end();
+      return;
+    }
+
+    // Send sources to client before streaming the answer
+    const sources = results.map((r, i) => ({
+      index: i + 1,
+      id: r.id,
+      title: r.title,
+      source: r.source,
+      date: r.date,
+      url: r.url,
+      score: r._distance,
+    }));
+    sendEvent("sources", { sources });
+
+    // 3. Build prompt with retrieved context
+    const contextBlocks = results
+      .map((r, i) =>
+        `[${i + 1}] ${r.title} (${r.source}, ${new Date(r.date).toLocaleDateString()})\n${r.content.slice(0, 1500)}`
+      )
+      .join("\n\n---\n\n");
+
+    const systemPrompt = `You are CLAWE's intelligence analyst. You answer questions using the retrieved knowledge base chunks below. Be direct, factual, and cite sources by number [1], [2], etc. If the context doesn't contain enough information, say so clearly.
+
+RETRIEVED CONTEXT:
+${contextBlocks}`;
+
+    // 4. Stream Claude response
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const stream = anthropic.messages.stream({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [{ role: "user", content: question }],
+    });
+
+    stream.on("text", (text) => {
+      sendEvent("delta", { text });
+    });
+
+    stream.on("finalMessage", () => {
+      sendEvent("done", { done: true });
+      res.end();
+    });
+
+    stream.on("error", (err) => {
+      console.error("Claude stream error:", err);
+      sendEvent("error", { message: String(err) });
+      res.end();
+    });
+
+    req.on("close", () => stream.abort());
+  } catch (err) {
+    console.error("RAG ask error:", err);
+    sendEvent("error", { message: String(err) });
+    res.end();
   }
 });
 

@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { mutate } from "swr";
 import {
   PageHeader,
@@ -31,6 +31,7 @@ import {
   Minimize2,
   ChevronDown,
   ChevronUp,
+  Terminal,
 } from "lucide-react";
 import { cn } from "@clawe/ui/lib/utils";
 
@@ -51,6 +52,10 @@ const ProjectsPage = () => {
   const [previewProject, setPreviewProject] = useState<string | null>(null);
   const [compactMode, setCompactMode] = useState(false);
   const [showComingSoon, setShowComingSoon] = useState(false);
+  const [logViewProject, setLogViewProject] = useState<string | null>(null);
+  const [liveLogs, setLiveLogs] = useState<string[]>([]);
+  const [logConnection, setLogConnection] = useState<EventSource | null>(null);
+  const logBottomRef = React.useRef<HTMLDivElement>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [startupLogs, setStartupLogs] = useState<Record<string, string[]>>({});
   const [logConnections, setLogConnections] = useState<Record<string, EventSource>>({});
@@ -72,6 +77,34 @@ const ProjectsPage = () => {
       return () => clearTimeout(timer);
     }
   }, [confirmingStop]);
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    logBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [liveLogs]);
+
+  // Open log stream for a running project
+  const openLogs = (id: string) => {
+    // Close existing
+    if (logConnection) { logConnection.close(); setLogConnection(null); }
+    setLiveLogs([]);
+    setLogViewProject(id);
+
+    const url = projectLogsUrl(id);
+    const es = new EventSource(url);
+    es.onmessage = (event) => {
+      setLiveLogs((prev) => [...prev, event.data].slice(-200));
+    };
+    es.onerror = () => es.close();
+    setLogConnection(es);
+  };
+
+  const closeLogs = () => {
+    logConnection?.close();
+    setLogConnection(null);
+    setLogViewProject(null);
+    setLiveLogs([]);
+  };
 
   // Mobile detection
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
@@ -392,6 +425,14 @@ const ProjectsPage = () => {
                       <Monitor className="mr-1.5 h-3.5 w-3.5" />
                       Preview
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openLogs(project.id)}
+                    >
+                      <Terminal className="mr-1.5 h-3.5 w-3.5" />
+                      Logs
+                    </Button>
                   </>
                 )}
               </>
@@ -525,6 +566,48 @@ const ProjectsPage = () => {
                 {plannedProjects.map(renderProjectCard)}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Log Viewer Panel */}
+        {logViewProject && (
+          <div className="fixed right-0 top-0 bottom-0 w-full sm:w-[480px] z-50 bg-background border-l shadow-lg flex flex-col">
+            <div className="flex items-center justify-between border-b p-3 bg-muted/50">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  {data?.projects.find((p) => p.id === logViewProject)?.name ?? logViewProject} — Logs
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  ({liveLogs.length} lines)
+                </span>
+              </div>
+              <Button size="sm" variant="ghost" onClick={closeLogs}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto bg-black p-3 font-mono text-xs text-green-400">
+              {liveLogs.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  Waiting for logs...
+                </p>
+              ) : (
+                <div className="space-y-0.5">
+                  {liveLogs.map((line, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        line.includes("[ERROR]") && "text-red-400",
+                        line.includes("warn") && "text-yellow-400",
+                      )}
+                    >
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div ref={logBottomRef} />
+            </div>
           </div>
         )}
 

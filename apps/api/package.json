@@ -8,6 +8,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@lancedb/lancedb": "^0.26.2",
     "@lancedb/lancedb-darwin-x64": "^0.22.3",
     "cors": "^2.8.5",

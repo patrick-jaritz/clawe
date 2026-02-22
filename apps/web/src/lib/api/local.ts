@@ -292,3 +292,71 @@ export async function updateTaskStatus(id: string, status: string): Promise<{ ok
   if (!res.ok) throw new Error(`Failed to update task status: ${res.status}`);
   return res.json();
 }
+
+export type IntelSource = {
+  index: number;
+  id: string;
+  title: string;
+  source: string;
+  date: string;
+  url: string;
+  score: number;
+};
+
+export type AskIntelCallbacks = {
+  onSources: (sources: IntelSource[]) => void;
+  onDelta: (text: string) => void;
+  onDone: () => void;
+  onError: (message: string) => void;
+};
+
+export function askIntel(question: string, callbacks: AskIntelCallbacks): () => void {
+  const ctrl = new AbortController();
+
+  (async () => {
+    const res = await fetch("/api/intel/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+      signal: ctrl.signal,
+    });
+
+    if (!res.ok || !res.body) {
+      callbacks.onError(`Request failed: ${res.status}`);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      let eventType = "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith("data: ")) {
+          try {
+            const payload = JSON.parse(line.slice(6));
+            if (eventType === "sources") callbacks.onSources(payload.sources);
+            else if (eventType === "delta") callbacks.onDelta(payload.text);
+            else if (eventType === "done") callbacks.onDone();
+            else if (eventType === "error") callbacks.onError(payload.message);
+          } catch { /* ignore parse errors */ }
+          eventType = "";
+        }
+      }
+    }
+  })().catch((err) => {
+    if (err.name !== "AbortError") callbacks.onError(String(err));
+  });
+
+  return () => ctrl.abort();
+}

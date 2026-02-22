@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { mutate } from "swr";
 import {
   PageHeader,
@@ -30,7 +30,9 @@ import {
   createIntelChunk,
   triggerIngest,
   getIntelChunk,
+  askIntel,
   type FullIntelChunk,
+  type IntelSource,
 } from "@/lib/api/local";
 import {
   Plus,
@@ -43,6 +45,10 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  MessageSquare,
+  BookOpen,
+  Send,
+  CornerDownLeft,
 } from "lucide-react";
 import { cn } from "@clawe/ui/lib/utils";
 
@@ -107,7 +113,235 @@ function formatChunkDate(isoDate: string): string {
   });
 }
 
+// ── RAG Chat ──────────────────────────────────────────────────────────────────
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources?: IntelSource[];
+  streaming?: boolean;
+};
+
+const sourceEmojis: Record<string, string> = {
+  gmail: "📧", rss: "📡", reddit: "🟠", hn: "🔶",
+  twitter: "🐦", github: "🐙", manual: "✏️",
+};
+
+const AskMode = () => {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeSources, setActiveSources] = useState<IntelSource[]>([]);
+  const abortRef = useRef<(() => void) | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const q = input.trim();
+    if (!q || isLoading) return;
+
+    setInput("");
+    setActiveSources([]);
+
+    const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: q };
+    const assistantId = (Date.now() + 1).toString();
+    const assistantMsg: ChatMessage = {
+      id: assistantId, role: "assistant", content: "", streaming: true,
+    };
+
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setIsLoading(true);
+
+    const abort = askIntel(q, {
+      onSources: (sources) => {
+        setActiveSources(sources);
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantId ? { ...m, sources } : m)
+        );
+      },
+      onDelta: (text) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: m.content + text } : m
+          )
+        );
+      },
+      onDone: () => {
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantId ? { ...m, streaming: false } : m)
+        );
+        setIsLoading(false);
+        abortRef.current = null;
+        setTimeout(() => inputRef.current?.focus(), 50);
+      },
+      onError: (message) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: `Error: ${message}`, streaming: false }
+              : m
+          )
+        );
+        setIsLoading(false);
+        abortRef.current = null;
+      },
+    });
+
+    abortRef.current = abort;
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  return (
+    <div className="flex h-[calc(100vh-200px)] gap-4">
+      {/* Chat panel */}
+      <div className="flex flex-1 flex-col rounded-lg border">
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.length === 0 && (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+              <MessageSquare className="h-10 w-10 opacity-30" />
+              <div>
+                <p className="font-medium">Ask your knowledge base</p>
+                <p className="text-sm">
+                  Queries search 204 chunks from Gmail, GitHub, RSS, Reddit
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 mt-2">
+                {[
+                  "What are the latest BYL updates?",
+                  "What's in my recent emails?",
+                  "Summarize recent GitHub activity",
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}
+                    className="rounded-full border px-3 py-1 text-xs hover:bg-muted transition-colors"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={cn(
+                "flex gap-3",
+                msg.role === "user" && "flex-row-reverse"
+              )}
+            >
+              <div
+                className={cn(
+                  "max-w-[85%] rounded-lg px-4 py-2.5 text-sm",
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted"
+                )}
+              >
+                {msg.content || (msg.streaming && (
+                  <span className="inline-flex gap-1">
+                    <span className="animate-bounce" style={{ animationDelay: "0ms" }}>·</span>
+                    <span className="animate-bounce" style={{ animationDelay: "150ms" }}>·</span>
+                    <span className="animate-bounce" style={{ animationDelay: "300ms" }}>·</span>
+                  </span>
+                ))}
+                {msg.streaming && msg.content && (
+                  <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-current" />
+                )}
+              </div>
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div className="border-t p-3">
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask a question about your knowledge base..."
+              disabled={isLoading}
+              className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+              autoFocus
+            />
+            <Button type="submit" size="sm" disabled={!input.trim() || isLoading}>
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </form>
+          <p className="mt-1.5 text-xs text-muted-foreground flex items-center gap-1">
+            <CornerDownLeft className="h-3 w-3" /> Enter to send
+          </p>
+        </div>
+      </div>
+
+      {/* Sources panel */}
+      <div className="hidden w-72 flex-shrink-0 lg:flex flex-col rounded-lg border">
+        <div className="border-b p-3">
+          <p className="text-sm font-medium">Sources</p>
+          <p className="text-xs text-muted-foreground">Chunks used in last answer</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {activeSources.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center pt-4">
+              Sources will appear here after your first question
+            </p>
+          ) : (
+            activeSources.map((src) => (
+              <div key={src.id} className="rounded-md border p-2.5 space-y-1">
+                <div className="flex items-start gap-2">
+                  <span className="text-xs font-bold text-muted-foreground flex-shrink-0">
+                    [{src.index}]
+                  </span>
+                  <p className="text-xs font-medium leading-snug line-clamp-2">{src.title}</p>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>{sourceEmojis[src.source] ?? "📄"}</span>
+                  <span>{src.source}</span>
+                  {src.url && (
+                    <a
+                      href={src.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-auto hover:text-foreground"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Main Page ──────────────────────────────────────────────────────────────────
+
 const IntelligencePage = () => {
+  const [mode, setMode] = useState<"browse" | "ask">("browse");
   const [selectedSource, setSelectedSource] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -243,14 +477,44 @@ const IntelligencePage = () => {
       <PageHeader>
         <PageHeaderRow>
           <PageHeaderTitle>Intelligence Library</PageHeaderTitle>
-          <Button size="sm" onClick={() => setShowAddForm(true)}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            Add Chunk
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Mode toggle */}
+            <div className="flex rounded-md border p-0.5 bg-muted/50">
+              <button
+                onClick={() => setMode("browse")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded px-3 py-1 text-sm transition-colors",
+                  mode === "browse" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <BookOpen className="h-4 w-4" />
+                Browse
+              </button>
+              <button
+                onClick={() => setMode("ask")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded px-3 py-1 text-sm transition-colors",
+                  mode === "ask" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <MessageSquare className="h-4 w-4" />
+                Ask
+              </button>
+            </div>
+            {mode === "browse" && (
+              <Button size="sm" onClick={() => setShowAddForm(true)}>
+                <Plus className="mr-1.5 h-4 w-4" />
+                Add Chunk
+              </Button>
+            )}
+          </div>
         </PageHeaderRow>
       </PageHeader>
 
-      <div className="space-y-6">
+      {/* Ask Mode */}
+      {mode === "ask" && <AskMode />}
+
+      <div className={cn("space-y-6", mode === "ask" && "hidden")}>
         {/* Ingestion Status Bar */}
         {ingestStatus && (
           <Card className="p-4">
