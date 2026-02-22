@@ -180,3 +180,26 @@ export async function intelLastIngest(): Promise<string | null> {
     return null;
   }
 }
+
+export async function intelGetById(id: string): Promise<IntelChunk | null> {
+  const table = await getTable();
+  try {
+    const results = await table.filter(`id = '${id}'`).toArray();
+    if (results.length === 0) return null;
+    
+    const r = results[0] as IntelRecord;
+    return {
+      id: r.id,
+      content: r.content,
+      vector: Array.from(r.vector),
+      source: r.source,
+      url: r.url,
+      title: r.title,
+      date: r.date,
+      tags: JSON.parse(r.tags || "[]"),
+      entity_type: r.entity_type,
+    };
+  } catch {
+    return null;
+  }
+}
