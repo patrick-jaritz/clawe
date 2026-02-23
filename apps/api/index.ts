@@ -823,25 +823,38 @@ app.get("/api/crons", (_req, res) => {
     // --json flag hangs; parse the table output instead
     const raw = execSync("openclaw cron list 2>/dev/null", { encoding: "utf8", timeout: 8000 });
     const lines = raw.split("\n");
-    // Find the header row (contains "ID" and "Name" and "Schedule")
+    // Find the header row to derive fixed column positions
     const headerIdx = lines.findIndex((l) => l.includes("ID") && l.includes("Name") && l.includes("Schedule"));
-    const dataLines = headerIdx !== -1 ? lines.slice(headerIdx + 1) : [];
+    if (headerIdx === -1) { res.json({ crons: [], total: 0 }); return; }
+    const header = lines[headerIdx];
+    const colStarts: Record<string, number> = {
+      id:       header.indexOf("ID"),
+      name:     header.indexOf("Name"),
+      schedule: header.indexOf("Schedule"),
+      next:     header.indexOf("Next"),
+      last:     header.indexOf("Last"),
+      status:   header.indexOf("Status"),
+      target:   header.indexOf("Target"),
+      agent:    header.indexOf("Agent"),
+    };
+    const getCol = (line: string, start: number, end: number) =>
+      line.slice(start, end).trim().replace(/…$/, "...").trim();
+
+    const dataLines = lines.slice(headerIdx + 1);
     const crons: Array<{ id: string; name: string; schedule: string; next: string; last: string; status: string; target: string; agent: string }> = [];
     for (const line of dataLines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("│") || trimmed.startsWith("◇") || trimmed.startsWith("─") || trimmed.startsWith("|")) continue;
-      // Split on 2+ spaces to extract columns
-      const cols = trimmed.split(/\s{2,}/);
-      if (cols.length < 3) continue;
-      const id = cols[0]?.trim() ?? "";
-      const name = cols[1]?.trim() ?? "";
-      const schedule = cols[2]?.trim() ?? "";
-      const next = cols[3]?.trim() ?? "";
-      const last = cols[4]?.trim() ?? "";
-      const status = cols[5]?.trim() ?? "";
-      const target = cols[6]?.trim() ?? "";
-      const agent = cols[7]?.trim() ?? "";
-      if (id) crons.push({ id, name, schedule, next, last, status, target, agent });
+      if (!line.trim() || line.trimStart().startsWith("│") || line.trimStart().startsWith("◇") || line.trimStart().startsWith("─")) continue;
+      if (line.length < (colStarts.name ?? 0)) continue;
+      const id = getCol(line, colStarts.id ?? 0, colStarts.name ?? 37);
+      if (!id) continue;
+      const name     = getCol(line, colStarts.name ?? 37,     colStarts.schedule ?? 62);
+      const schedule = getCol(line, colStarts.schedule ?? 62, colStarts.next ?? 95);
+      const next     = getCol(line, colStarts.next ?? 95,     colStarts.last ?? 106);
+      const last     = getCol(line, colStarts.last ?? 106,    colStarts.status ?? 117);
+      const status   = getCol(line, colStarts.status ?? 117,  colStarts.target ?? 127);
+      const target   = getCol(line, colStarts.target ?? 127,  colStarts.agent ?? 137);
+      const agent    = getCol(line, colStarts.agent ?? 137,   line.length);
+      crons.push({ id, name, schedule, next, last, status, target, agent });
     }
     res.json({ crons, total: crons.length });
   } catch (err) {
