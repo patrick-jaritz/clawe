@@ -8,297 +8,388 @@ import { mutate } from "swr";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from "@clawe/ui/components/card";
 import { Button } from "@clawe/ui/components/button";
 import { Badge } from "@clawe/ui/components/badge";
 import {
-  Layers,
-  Brain,
-  Rocket,
-  FileText,
-  CheckSquare,
-  ClipboardList,
-  Circle,
-  CheckCircle2,
-  XCircle,
-  Mail,
-  Github,
-  MessageCircle,
   AlertTriangle,
+  Brain,
+  CheckCircle2,
+  Circle,
   Clock,
-  Zap,
-  CheckCheck,
-  Sparkles,
+  FileText,
+  GraduationCap,
+  Github,
+  Mail,
+  MessageCircle,
   RefreshCw,
   Send,
-  Timer,
-  Database,
-  Globe,
-  Plus,
-  Wifi,
-  WifiOff,
-  GraduationCap,
-  type LucideIcon,
+  Sparkles,
+  XCircle,
+  Zap,
 } from "lucide-react";
-import {
-  ALL_QUICK_ACTIONS,
-  getEnabledActionIds,
-} from "@/lib/quick-actions-config";
-import { useTailscaleStatus, useDBAProgress } from "@/lib/api/local";
 import {
   useSystemHealth,
   useRecentIntel,
   useProjects,
   useTasks,
+  useAgents,
+  useAgentSSE,
+  useDBAProgress,
   updateTaskStatus,
-  generateDailyDigest,
   askIntel,
+  generateDailyDigest,
   type LocalTask,
 } from "@/lib/api/local";
 import { cn } from "@clawe/ui/lib/utils";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-} from "lucide-react";
-import { useSystemHealth, useRecentIntel, useProjects, useAgents, useAgentSSE, useMachines } from "@/lib/api/local";
+// ── Date/time helpers ─────────────────────────────────────────────────────────
 
 function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
   return "Good evening";
 }
 
 function formatDate(): string {
-  const now = new Date();
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-  ];
-  return `${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  return new Date().toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 function formatTimeAgo(dateStr: string): string {
   try {
-    const date = new Date(dateStr);
-    const diffMs = Date.now() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return "1d ago";
-    return `${diffDays}d ago`;
-  } catch {
-    return "recently";
-  }
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const m = Math.floor(diff / 60000);
+    const h = Math.floor(m / 60);
+    const d = Math.floor(h / 24);
+    if (m < 60) return `${m}m ago`;
+    if (h < 24) return `${h}h ago`;
+    return `${d}d ago`;
+  } catch { return "recently"; }
 }
 
-function getSourceIcon(source: string) {
-  switch (source.toLowerCase()) {
-    case "gmail": return <Mail className="h-4 w-4" />;
-    case "github": return <Github className="h-4 w-4" />;
-    case "reddit":
-    case "twitter": return <MessageCircle className="h-4 w-4" />;
-    default: return <Circle className="h-4 w-4" />;
-  }
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10); // "2026-02-23"
 }
 
-// ── Deadline helpers ──────────────────────────────────────────────────────────
+// ── Daily Brief (auto-loads once per day, cached in localStorage) ─────────────
 
-const DBA_DEADLINE = new Date("2026-03-31T23:59:59+03:00"); // End of March, Jerusalem time
+function useDailyBrief() {
+  const [brief, setBrief] = React.useState<string>("");
+  const [loading, setLoading] = React.useState(false);
+  const [generatedAt, setGeneratedAt] = React.useState<string>("");
 
-function getDaysUntil(target: Date): number {
-  const now = new Date();
-  const diffMs = target.getTime() - now.getTime();
-  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-}
-
-function getDeadlineColor(days: number): string {
-  if (days <= 14) return "text-red-600 dark:text-red-400";
-  if (days <= 30) return "text-yellow-600 dark:text-yellow-400";
-  return "text-green-600 dark:text-green-400";
-}
-
-function getDeadlineBg(days: number): string {
-  if (days <= 14) return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
-  if (days <= 30) return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
-  return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
-}
-
-// ── DBA Countdown Widget ───────────────────────────────────────────────────
-
-function DBACountdownWidget() {
-  const { data } = useDBAProgress();
-  if (!data) return null;
-
-  const deadline = data.papers[0]?.deadline ?? "2026-03-31";
-  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  const total = data.papers.reduce((s, p) => s + p.sections.length, 0);
-  const done = data.papers.reduce((s, p) => s + p.sections.filter((x) => x.done).length, 0);
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  const urgencyColor = days <= 14 ? "text-destructive border-destructive/40 bg-destructive/5"
-    : days <= 30 ? "text-orange-500 border-orange-400/40 bg-orange-50/30 dark:bg-orange-950/20"
-    : "text-foreground";
-
-  return (
-    <Link href="/dba">
-      <Card className={cn("p-4 hover:shadow-md transition-shadow cursor-pointer", urgencyColor)}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <GraduationCap className="h-5 w-5" />
-            <div>
-              <p className="text-sm font-semibold">DBA Papers</p>
-              <p className="text-xs text-muted-foreground">3 papers · due {new Date(deadline).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-2xl font-bold">{days}d</p>
-            <p className="text-xs text-muted-foreground">{pct}% done</p>
-          </div>
-        </div>
-        <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-          <div className="h-full bg-current rounded-full transition-all" style={{ width: `${pct}%` }} />
-        </div>
-      </Card>
-    </Link>
-  );
-}
-
-// ── Tailscale Widget ───────────────────────────────────────────────────────
-
-function TailscaleWidget() {
-  const { data, error } = useTailscaleStatus();
-
-  if (error || !data) return null; // Silent fail if tailscale not available
-
-  const allDevices = data.self ? [data.self, ...data.peers] : data.peers;
-  const online = allDevices.filter((d) => d.online);
-  const offline = allDevices.filter((d) => !d.online);
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Wifi className="h-4 w-4 text-green-500" />
-            Tailscale Network
-          </CardTitle>
-          <Badge variant="secondary" className="text-xs">
-            {online.length}/{allDevices.length} online
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-1.5">
-          {allDevices.map((d) => (
-            <div key={d.id || d.name} className="flex items-center gap-2 text-sm">
-              {d.online ? (
-                <Wifi className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-              ) : (
-                <WifiOff className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              )}
-              <span className={cn("flex-1 truncate", !d.online && "text-muted-foreground")}>
-                {d.name || "unnamed"}
-                {d.isSelf && <span className="ml-1 text-xs text-muted-foreground">(this device)</span>}
-              </span>
-              <span className="font-mono text-xs text-muted-foreground">{d.ip}</span>
-              {d.os && (
-                <span className="text-xs text-muted-foreground hidden sm:inline">{d.os}</span>
-              )}
-            </div>
-          ))}
-          {offline.length > 0 && online.length > 0 && (
-            <p className="text-xs text-muted-foreground pt-1">
-              {offline.length} device{offline.length !== 1 ? "s" : ""} offline
-            </p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── Icon map for quick actions ─────────────────────────────────────────────
-
-const ACTION_ICON_MAP: Record<string, LucideIcon> = {
-  ClipboardList, Brain, Rocket, FileText, CheckSquare,
-  Layers, Timer, Database, Globe, Plus,
-};
-
-// ── Configurable Quick Actions ─────────────────────────────────────────────
-
-function ConfigurableQuickActions({ hostname }: { hostname: string }) {
-  const [enabledIds, setEnabledIds] = React.useState<Set<string>>(new Set());
-
-  React.useEffect(() => {
-    setEnabledIds(getEnabledActionIds());
+  const generate = React.useCallback(async (force = false) => {
+    const key = `brief:${todayKey()}`;
+    if (!force) {
+      const cached = localStorage.getItem(key);
+      if (cached) {
+        try {
+          const { text, ts } = JSON.parse(cached) as { text: string; ts: string };
+          setBrief(text);
+          setGeneratedAt(ts);
+          return;
+        } catch { /* bad cache */ }
+      }
+    }
+    setLoading(true);
+    setBrief("");
+    try {
+      const result = await generateDailyDigest();
+      const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setBrief(result.brief);
+      setGeneratedAt(ts);
+      localStorage.setItem(key, JSON.stringify({ text: result.brief, ts }));
+    } catch {
+      setBrief("*Brief unavailable — check API connection.*");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const actions = ALL_QUICK_ACTIONS.filter((a) => enabledIds.has(a.id));
+  React.useEffect(() => { generate(); }, [generate]);
+
+  return { brief, loading, generatedAt, refresh: () => generate(true) };
+}
+
+// ── Source icon ───────────────────────────────────────────────────────────────
+
+function SourceIcon({ source }: { source: string }) {
+  const s = source.toLowerCase();
+  if (s === "gmail") return <Mail className="h-3.5 w-3.5" />;
+  if (s === "github") return <Github className="h-3.5 w-3.5" />;
+  if (s === "reddit" || s === "twitter") return <MessageCircle className="h-3.5 w-3.5" />;
+  return <Circle className="h-3.5 w-3.5" />;
+}
+
+// ── Situation strip ───────────────────────────────────────────────────────────
+
+function SituationStrip() {
+  const { data: healthData } = useSystemHealth();
+  const { data: projectsData } = useProjects();
+  const { data: tasksData } = useTasks();
+  const { data: dbaData } = useDBAProgress();
+
+  const DBA_DEADLINE = new Date("2026-03-31T23:59:00");
+  const daysLeft = Math.max(0, Math.ceil((DBA_DEADLINE.getTime() - Date.now()) / 86400000));
+  const runningCount = projectsData?.projects?.filter((p) => p.running).length ?? 0;
+  const activeTaskCount = tasksData?.filter((t) => t.status !== "done").length ?? 0;
+  const chunkCount = healthData?.services?.lancedb?.chunks ?? 0;
+
+  const dbaTotal = dbaData?.papers?.reduce((s, p) => s + p.sections.length, 0) ?? 0;
+  const dbaDone = dbaData?.papers?.reduce((s, p) => s + p.sections.filter((x) => x.done).length, 0) ?? 0;
+  const dbaPct = dbaTotal > 0 ? Math.round((dbaDone / dbaTotal) * 100) : 0;
+
+  const urgency = daysLeft <= 14 ? "text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20"
+    : daysLeft <= 30 ? "text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/20"
+    : "text-foreground border-border bg-muted/30";
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <Link href="/dba">
+        <div className={cn("rounded-xl border px-4 py-3 cursor-pointer hover:shadow-sm transition-shadow", urgency)}>
+          <div className="flex items-center gap-2 mb-0.5">
+            <GraduationCap className="h-4 w-4" />
+            <span className="text-xs font-medium uppercase tracking-wide">DBA</span>
+          </div>
+          <p className="text-xl font-bold leading-none">{daysLeft}d</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{dbaPct}% done</p>
+        </div>
+      </Link>
+
+      <Link href="/board">
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 cursor-pointer hover:shadow-sm transition-shadow">
+          <div className="flex items-center gap-2 mb-0.5">
+            <Clock className="h-4 w-4 text-blue-500" />
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tasks</span>
+          </div>
+          <p className="text-xl font-bold leading-none">{activeTaskCount}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">active</p>
+        </div>
+      </Link>
+
+      <Link href="/projects">
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 cursor-pointer hover:shadow-sm transition-shadow">
+          <div className="flex items-center gap-2 mb-0.5">
+            <Zap className="h-4 w-4 text-yellow-500" />
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Running</span>
+          </div>
+          <p className="text-xl font-bold leading-none">{runningCount}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">projects</p>
+        </div>
+      </Link>
+
+      <Link href="/intelligence">
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 cursor-pointer hover:shadow-sm transition-shadow">
+          <div className="flex items-center gap-2 mb-0.5">
+            <Brain className="h-4 w-4 text-purple-500" />
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Intel</span>
+          </div>
+          <p className="text-xl font-bold leading-none">{chunkCount}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">chunks</p>
+        </div>
+      </Link>
+    </div>
+  );
+}
+
+// ── Today's Focus ─────────────────────────────────────────────────────────────
+
+function TodaysFocus() {
+  const { data: tasks } = useTasks();
+  const [toggling, setToggling] = React.useState<string | null>(null);
+
+  const activeTasks = (tasks ?? []).filter((t) => t.status !== "done").slice(0, 5);
+
+  const handleDone = async (task: LocalTask) => {
+    setToggling(task._id);
+    try {
+      await updateTaskStatus(task._id, "done");
+      mutate("/api/tasks");
+    } finally {
+      setToggling(null);
+    }
+  };
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Jump to common tasks — or press ⌘K</CardDescription>
-          </div>
-          <Link href="/settings/dashboard" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            Customize →
+          <CardTitle className="text-sm font-semibold">Today's Focus</CardTitle>
+          <Link href="/board">
+            <Button variant="ghost" size="sm" className="text-xs h-7">Board →</Button>
           </Link>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-          {actions.map((action) => {
-            const Icon = ACTION_ICON_MAP[action.icon] ?? ClipboardList;
-            const href = action.external
-              ? `http://${hostname}:${action.href.replace("PORT:", "")}`
-              : action.href;
-            return (
-              <Button key={action.id} variant="outline" size="sm" asChild>
-                {action.external ? (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" />
-                    <span className="truncate">{action.label}</span>
-                  </a>
-                ) : (
-                  <Link href={href} className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" />
-                    <span className="truncate">{action.label}</span>
-                  </Link>
-                )}
-              </Button>
-            );
-          })}
-          {actions.length === 0 && (
-            <Link href="/settings/dashboard" className="col-span-full text-sm text-muted-foreground hover:text-foreground">
-              No quick actions configured. Click to add →
+        {activeTasks.length === 0 ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            All clear — no active tasks.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {activeTasks.map((task) => (
+              <div key={task._id} className="flex items-center gap-3 rounded-lg border px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                <button
+                  onClick={() => handleDone(task)}
+                  disabled={toggling === task._id}
+                  className="text-muted-foreground hover:text-green-500 flex-shrink-0 transition-colors disabled:opacity-40"
+                >
+                  {toggling === task._id
+                    ? <Circle className="h-4 w-4 animate-pulse" />
+                    : <Circle className="h-4 w-4" />}
+                </button>
+                <span className="flex-1 truncate text-sm">{task.title}</span>
+                <Badge variant="outline" className={cn(
+                  "text-xs flex-shrink-0",
+                  task.status === "in_progress" && "border-blue-300 text-blue-600",
+                  task.status === "review" && "border-purple-300 text-purple-600",
+                )}>
+                  {task.status === "in_progress" ? "In Progress"
+                    : task.status === "review" ? "Review" : "Inbox"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Needs Attention ───────────────────────────────────────────────────────────
+
+function NeedsAttentionBanner() {
+  useAgentSSE();
+  const { data: agentsData } = useAgents();
+
+  const flagged = (agentsData ?? []).filter((a) => {
+    if (!a.needsAttention) return false;
+    if (Array.isArray(a.needsAttention)) return a.needsAttention.length > 0;
+    return true;
+  });
+
+  if (flagged.length === 0) return null;
+
+  return (
+    <Card className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/20">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="h-4 w-4" />
+          Needs Attention
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {flagged.map((agent) => (
+          <div key={agent._id} className="flex items-start gap-3">
+            <span className="text-base">{agent.emoji}</span>
+            <div>
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{agent.name}</p>
+              {Array.isArray(agent.needsAttention) && agent.needsAttention.length > 0 && (
+                <ul className="mt-0.5 space-y-0.5">
+                  {agent.needsAttention.map((item: string, i: number) => (
+                    <li key={i} className="text-xs text-amber-700 dark:text-amber-400">• {item}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Intel Highlights ──────────────────────────────────────────────────────────
+
+function IntelHighlights() {
+  const { data: intelData } = useRecentIntel();
+  const chunks = intelData?.chunks?.slice(0, 6) ?? [];
+
+  if (chunks.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold">Intel Highlights</CardTitle>
+          <Link href="/intelligence">
+            <Button variant="ghost" size="sm" className="text-xs h-7">All intel →</Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="divide-y">
+          {chunks.map((chunk) => (
+            <Link
+              key={chunk.id}
+              href={chunk.url || "/intelligence"}
+              className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0 hover:bg-muted/30 -mx-1 px-1 rounded transition-colors"
+            >
+              <span className="mt-0.5 text-muted-foreground flex-shrink-0">
+                <SourceIcon source={chunk.source} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium leading-snug truncate">{chunk.title}</p>
+                <p className="text-xs text-muted-foreground">{chunk.source} · {formatTimeAgo(chunk.date)}</p>
+              </div>
             </Link>
-          )}
+          ))}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function formatUptime(startedAt: number): string {
-  const diff = Date.now() - startedAt;
-  const mins = Math.floor(diff / 60000);
-  const hrs = Math.floor(mins / 60);
-  const days = Math.floor(hrs / 24);
-  if (days > 0) return `${days}d ${hrs % 24}h`;
-  if (hrs > 0) return `${hrs}h ${mins % 60}m`;
-  return `${mins}m`;
+// ── System Health (compact) ───────────────────────────────────────────────────
+
+function SystemHealthBar() {
+  const { data: healthData } = useSystemHealth();
+  if (!healthData) return null;
+
+  const services = [
+    healthData.services.api,
+    healthData.services.qdrant,
+    healthData.services.lancedb,
+  ];
+
+  const allOk = services.every((s) => s.ok);
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm">
+      <span className="flex-shrink-0">
+        {allOk
+          ? <CheckCircle2 className="h-4 w-4 text-green-500" />
+          : <XCircle className="h-4 w-4 text-red-500" />}
+      </span>
+      <span className="font-medium">{allOk ? "All systems operational" : "Degraded"}</span>
+      <span className="text-muted-foreground">·</span>
+      {services.map((svc) => (
+        <span key={svc.label} className={cn("text-xs", svc.ok ? "text-muted-foreground" : "text-red-500 font-medium")}>
+          {svc.ok ? `${svc.label} ✓` : `${svc.label} ✗`}
+        </span>
+      ))}
+      {healthData.next_ingest && (
+        <>
+          <span className="text-muted-foreground ml-auto text-xs">Next ingest: {healthData.next_ingest}</span>
+        </>
+      )}
+    </div>
+  );
 }
 
-// ── Quick Ask (Home RAG widget) ───────────────────────────────────────────────
+// ── Quick Ask ─────────────────────────────────────────────────────────────────
 
 function QuickAsk() {
   const [query, setQuery] = React.useState("");
@@ -310,27 +401,26 @@ function QuickAsk() {
   const handleAsk = () => {
     const q = query.trim();
     if (!q || loading) return;
-    setAnswer("");
-    setAsked(true);
-    setLoading(true);
-
+    setAnswer(""); setAsked(true); setLoading(true);
     const abort = askIntel(q, {
       onSources: () => {},
-      onDelta: (text) => setAnswer((prev) => prev + text),
+      onDelta: (t) => setAnswer((p) => p + t),
       onDone: () => { setLoading(false); abortRef.current = null; },
       onError: (msg) => { setAnswer(`Error: ${msg}`); setLoading(false); },
     });
     abortRef.current = abort;
   };
 
+  const SUGGESTIONS = ["What's in my recent emails?", "BYL progress?", "Latest GitHub?"];
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-purple-500" />
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <Sparkles className="h-4 w-4 text-purple-500" />
           Quick Ask
+          <span className="text-xs font-normal text-muted-foreground ml-1">RAG + Claude</span>
         </CardTitle>
-        <CardDescription>Ask your knowledge base · powered by RAG + Claude</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex gap-2">
@@ -338,35 +428,32 @@ function QuickAsk() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAsk()}
-            placeholder="Ask anything about your knowledge base..."
+            placeholder="Ask your knowledge base..."
             className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
           <Button size="sm" onClick={handleAsk} disabled={!query.trim() || loading}>
             {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
-        {asked && (
+        {asked ? (
           <div className="rounded-lg border bg-muted/30 p-3 text-sm leading-relaxed min-h-[60px]">
-            {answer || (loading && (
+            {answer ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+              </div>
+            ) : loading && (
               <span className="flex gap-1 text-muted-foreground">
-                <span className="animate-bounce">·</span>
-                <span className="animate-bounce" style={{ animationDelay: "150ms" }}>·</span>
-                <span className="animate-bounce" style={{ animationDelay: "300ms" }}>·</span>
+                {[0, 150, 300].map((d) => (
+                  <span key={d} className="animate-bounce" style={{ animationDelay: `${d}ms` }}>·</span>
+                ))}
               </span>
-            ))}
-            {loading && answer && (
-              <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-current" />
             )}
           </div>
-        )}
-        {!asked && (
+        ) : (
           <div className="flex flex-wrap gap-2">
-            {["What's in my recent emails?", "Latest GitHub updates?", "BYL progress?"].map((s) => (
-              <button
-                key={s}
-                onClick={() => setQuery(s)}
-                className="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
+            {SUGGESTIONS.map((s) => (
+              <button key={s} onClick={() => setQuery(s)}
+                className="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
                 {s}
               </button>
             ))}
@@ -377,606 +464,76 @@ function QuickAsk() {
   );
 }
 
-// ── Daily Digest button ───────────────────────────────────────────────────────
-
-function DailyDigestButton() {
-  const [brief, setBrief] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [shown, setShown] = React.useState(false);
-
-  const handleGenerate = async () => {
-    setLoading(true);
-    try {
-      const result = await generateDailyDigest();
-      setBrief(result.brief);
-      setShown(true);
-    } catch {
-      setBrief("Failed to generate brief. Check API.");
-      setShown(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <Button variant="outline" size="sm" onClick={handleGenerate} disabled={loading}>
-        {loading ? (
-          <><RefreshCw className="mr-1.5 h-4 w-4 animate-spin" /> Generating...</>
-        ) : (
-          <><Sparkles className="mr-1.5 h-4 w-4" /> Morning Brief</>
-        )}
-      </Button>
-      {shown && brief && (
-        <div className="rounded-lg border bg-muted/30 p-3 text-sm leading-relaxed whitespace-pre-wrap">
-          {brief}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Situation Panel ───────────────────────────────────────────────────────────
-
-function SituationPanel({
-  daysLeft,
-  runningCount,
-  chunkCount,
-  lastIngest,
-  activeTasks,
-}: {
-  daysLeft: number;
-  runningCount: number;
-  chunkCount: number;
-  lastIngest?: string;
-  activeTasks: number;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      {/* DBA Deadline */}
-      <div className={cn("flex items-center gap-3 rounded-lg border p-4", getDeadlineBg(daysLeft))}>
-        <AlertTriangle className={cn("h-5 w-5 flex-shrink-0", getDeadlineColor(daysLeft))} />
-        <div>
-          <p className={cn("text-lg font-bold leading-none", getDeadlineColor(daysLeft))}>
-            {daysLeft} days
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">DBA papers due Mar 31</p>
-        </div>
-      </div>
-
-      {/* Running Projects */}
-      <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/30">
-        <Zap className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-        <div>
-          <p className="text-lg font-bold leading-none text-blue-600 dark:text-blue-400">
-            {runningCount} running
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {activeTasks} task{activeTasks !== 1 ? "s" : ""} active
-          </p>
-        </div>
-      </div>
-
-      {/* Intel */}
-      <div className="flex items-center gap-3 rounded-lg border p-4">
-        <Brain className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
-        <div>
-          <p className="text-lg font-bold leading-none">{chunkCount} chunks</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {lastIngest ? `Last: ${formatTimeAgo(lastIngest)}` : "No ingest yet"}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Today's Focus ─────────────────────────────────────────────────────────────
-
-function TodaysFocus({ tasks }: { tasks: LocalTask[] }) {
-  const [toggling, setToggling] = React.useState<string | null>(null);
-
-  const activeTasks = tasks
-    .filter((t) => t.status !== "done")
-    .slice(0, 3);
-
-  const handleDone = async (task: LocalTask) => {
-    setToggling(task._id);
-    try {
-      await updateTaskStatus(task._id, "done");
-      mutate("/api/tasks");
-    } catch (err) {
-      console.error("Failed to mark done:", err);
-    } finally {
-      setToggling(null);
-    }
-  };
-
-  if (activeTasks.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CheckCheck className="h-5 w-5 text-green-600" />
-            Today's Focus
-          </CardTitle>
-          <CardDescription>Top tasks to move forward</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
-            All clear — no active tasks.{" "}
-            <Link href="/board" className="font-medium text-pink-600 hover:underline">
-              Check the board
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Today's Focus
-            </CardTitle>
-            <CardDescription>Top {activeTasks.length} active tasks</CardDescription>
-          </div>
-          <Link href="/board">
-            <Button variant="ghost" size="sm" className="text-xs">
-              Full board →
-            </Button>
-          </Link>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {activeTasks.map((task) => (
-          <div
-            key={task._id}
-            className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/30"
-          >
-            <button
-              onClick={() => handleDone(task)}
-              disabled={toggling === task._id}
-              className="flex-shrink-0 text-muted-foreground transition-colors hover:text-green-600 disabled:opacity-50"
-              title="Mark done"
-            >
-              {toggling === task._id ? (
-                <Circle className="h-5 w-5 animate-pulse" />
-              ) : (
-                <Circle className="h-5 w-5" />
-              )}
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{task.title}</p>
-              {task.assignees?.[0] && (
-                <p className="text-xs text-muted-foreground">
-                  {task.assignees[0].emoji} {task.assignees[0].name}
-                </p>
-              )}
-            </div>
-            <Badge
-              variant="outline"
-              className={cn(
-                "flex-shrink-0 text-xs",
-                task.status === "in_progress" && "border-blue-300 text-blue-600",
-                task.status === "review" && "border-purple-300 text-purple-600",
-                task.status === "inbox" && "border-gray-300 text-gray-500",
-              )}
-            >
-              {task.status === "in_progress" ? "In Progress" :
-               task.status === "review" ? "Review" : "Inbox"}
-            </Badge>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
-
-// DBA papers deadline: end of March 2026
-const DBA_DEADLINE = new Date("2026-03-31T23:59:00");
-const DBA_PAPERS = ["Paper 1: Innovation & Technology", "Paper 2: Leadership", "Paper 3: Strategy"];
-
-function getDbaCountdown() {
-  const now = new Date();
-  const diff = DBA_DEADLINE.getTime() - now.getTime();
-  if (diff <= 0) return { days: 0, hours: 0, urgent: true, overdue: true };
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  return { days, hours, urgent: days <= 14, overdue: false };
-}
+// ── Home Page ─────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const { data: healthData } = useSystemHealth();
-  const { data: intelData } = useRecentIntel();
-  const { data: projectsData } = useProjects();
-  const { data: tasks } = useTasks();
-  const [hostname, setHostname] = React.useState("localhost");
-
-  React.useEffect(() => {
-    setHostname(window.location.hostname);
-  }, []);
-
-  const runningProjects = projectsData?.projects?.filter((p) => p.running) || [];
-  const activeTasks = tasks?.filter((t) => t.status !== "done") || [];
-  const daysLeft = getDaysUntil(DBA_DEADLINE);
-  const lastIngestDate = intelData?.chunks?.[0]?.date;
-  const chunkCount = healthData?.services?.lancedb?.chunks ?? 0;
-  const { data: agentsData } = useAgents();
-  const { data: machinesData } = useMachines();
-  useAgentSSE();
-
-  const runningProjects = projectsData?.projects?.filter((p) => p.running) || [];
-  const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
-
-  const needsAttentionAgents = (agentsData ?? []).filter((a) => {
-    if (!a.needsAttention) return false;
-    if (Array.isArray(a.needsAttention)) return a.needsAttention.length > 0;
-    return true;
-  });
-
-  const dba = getDbaCountdown();
+  const { brief, loading, generatedAt, refresh } = useDailyBrief();
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-5 p-6 max-w-4xl mx-auto">
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {getGreeting()}, Patrick
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{formatDate()}</p>
+          <h1 className="text-2xl font-bold tracking-tight">{getGreeting()}, Patrick</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">{formatDate()}</p>
         </div>
-        <DailyDigestButton />
+        <Button variant="ghost" size="sm" onClick={refresh} disabled={loading} className="text-xs text-muted-foreground flex-shrink-0">
+          <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", loading && "animate-spin")} />
+          {generatedAt ? `Refreshed ${generatedAt}` : "Generate brief"}
+        </Button>
       </div>
 
-      {/* Situation Panel */}
-      <SituationPanel
-        daysLeft={daysLeft}
-        runningCount={runningProjects.length}
-        chunkCount={chunkCount}
-        lastIngest={lastIngestDate}
-        activeTasks={activeTasks.length}
-      />
+      {/* System Health Bar */}
+      <SystemHealthBar />
 
-      {/* Today's Focus */}
-      {tasks && <TodaysFocus tasks={tasks} />}
+      {/* Needs Attention */}
+      <NeedsAttentionBanner />
 
-      {/* System Health + Running Projects */}
-      {/* Needs Attention Banner */}
-      {needsAttentionAgents.length > 0 && (
-        <Card className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
-              <AlertTriangle className="h-5 w-5" />
-              Needs Attention
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {needsAttentionAgents.map((agent) => (
-              <div key={agent._id} className="flex items-start gap-3">
-                <span className="text-lg">{agent.emoji}</span>
-                <div>
-                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                    {agent.name}
-                  </p>
-                  {Array.isArray(agent.needsAttention) && agent.needsAttention.length > 0 ? (
-                    <ul className="mt-0.5 space-y-0.5">
-                      {agent.needsAttention.map((item, i) => (
-                        <li key={i} className="text-xs text-amber-700 dark:text-amber-400">
-                          • {item}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-amber-700 dark:text-amber-400">
-                      Review required
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Top Grid: System Health + Running Projects */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* System Health */}
-        <Card>
-          <CardHeader>
-            <CardTitle>System Health</CardTitle>
-            <CardDescription>Core services status</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {healthData ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {healthData.services.api.ok ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-red-600" />
-                    )}
-                    <span className="text-sm font-medium">
-                      {healthData.services.api.label}
-                    </span>
-                  </div>
-                  <Badge variant={healthData.services.api.ok ? "default" : "destructive"}>
-                    {healthData.services.api.ok ? "Online" : "Offline"}
-                  </Badge>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {healthData.services.qdrant.ok ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-red-600" />
-                    )}
-                    <span className="text-sm font-medium">
-                      {healthData.services.qdrant.label}
-                    </span>
-                  </div>
-                  <Badge variant={healthData.services.qdrant.ok ? "default" : "destructive"}>
-                    {healthData.services.qdrant.ok ? "Online" : "Offline"}
-                  </Badge>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {healthData.services.lancedb.ok ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-red-600" />
-                    )}
-                    <span className="text-sm font-medium">
-                      {healthData.services.lancedb.label}
-                    </span>
-                  </div>
-                  <Badge variant={healthData.services.lancedb.ok ? "default" : "destructive"}>
-                    {healthData.services.lancedb.ok
-                      ? `${healthData.services.lancedb.chunks} chunks`
-                      : "Offline"}
-                  </Badge>
-                </div>
-
-                <div className="mt-4 border-t pt-3">
-                  <p className="text-xs text-muted-foreground">
-                    Next ingest:{" "}
-                    <span className="font-medium">{healthData.next_ingest}</span>
-                  </p>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">Loading...</p>
+      {/* Daily Brief — the main event */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-semibold">Daily Brief</CardTitle>
+            {generatedAt && (
+              <span className="text-xs text-muted-foreground ml-1">· {generatedAt}</span>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Running Projects */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Running Projects ({runningProjects.length})</CardTitle>
-            <CardDescription>Currently active project servers</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {runningProjects.length > 0 ? (
-              <div className="space-y-2">
-                {runningProjects.map((project) => (
-                  <div
-                    key={project.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Circle className="h-2 w-2 flex-shrink-0 fill-green-600 text-green-600" />
-                      <span className="font-medium truncate">{project.name}</span>
-                      {project.startedAt && (
-                        <span className="flex items-center gap-0.5 text-xs text-muted-foreground flex-shrink-0">
-                          <Timer className="h-3 w-3" />
-                          {formatUptime(project.startedAt)}
-                        </span>
-                      )}
-                    <div className="flex items-center gap-2">
-                      <Circle className="h-2 w-2 fill-green-600 text-green-600" />
-                      <span className="font-medium text-sm">{project.name}</span>
-                    </div>
-                    <a
-                      href={`http://${hostname}:${project.port}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-muted-foreground hover:text-foreground flex-shrink-0 ml-2"
-                      className="text-xs text-muted-foreground hover:text-foreground font-mono"
-                    >
-                      :{project.port} ↗
-                    </a>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No projects running. Start one from the{" "}
-                <Link href="/projects" className="font-medium text-pink-600 hover:underline">
-                  Projects
-                </Link>{" "}
-                page.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* DBA Deadline Countdown */}
-      <Card className={dba.urgent ? "border-orange-300 dark:border-orange-700" : ""}>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              DBA Papers Deadline
-            </CardTitle>
-            <Badge variant={dba.overdue ? "destructive" : dba.urgent ? "secondary" : "outline"}
-              className={dba.urgent && !dba.overdue ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300" : ""}>
-              {dba.overdue ? "OVERDUE" : `${dba.days}d ${dba.hours}h left`}
-            </Badge>
           </div>
-          <CardDescription>End of March 2026 · 3 papers required</CardDescription>
+          <CardDescription className="text-xs">Auto-generated once per day · cached until midnight</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-            {DBA_PAPERS.map((paper, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
-                <span className="text-muted-foreground">{i + 1}.</span>
-                <span>{paper}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-muted-foreground mt-2 text-xs">
-            Deadline: 31 March 2026 ·{" "}
-            <a href={`http://${hostname}:3016`} target="_blank" rel="noopener noreferrer"
-              className="text-pink-600 hover:underline">
-              Open DBA Assistant →
-            </a>
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Infrastructure / Machines */}
-      {machinesData && machinesData.machines.some((m) => m.metrics) && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Infrastructure</CardTitle>
-            <CardDescription>Machine health across the network</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {machinesData.machines.map((machine) => (
-                <div key={machine.id} className="rounded-lg border p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>{machine.emoji}</span>
-                      <span className="font-medium text-sm">{machine.name}</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground font-mono">
-                      {machine.metrics?.hostname ?? machine.id}
-                    </span>
-                  </div>
-                  {machine.metrics ? (
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                      <span>Disk free: <span className="text-foreground font-medium">{machine.metrics.disk_free ?? "—"}</span></span>
-                      <span>Used: <span className="text-foreground font-medium">{machine.metrics.disk_used_pct ?? "—"}</span></span>
-                      <span>Load: <span className="text-foreground font-medium">{machine.metrics.load_avg_1m ?? "—"}</span></span>
-                      <span>Mem free: <span className="text-foreground font-medium">{machine.metrics.mem_free_mb ? `${machine.metrics.mem_free_mb} MB` : "—"}</span></span>
-                      <span className="col-span-2">Uptime: <span className="text-foreground font-medium">{machine.metrics.uptime ?? "—"}</span></span>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">No metrics pushed yet</p>
-                  )}
-                </div>
+          {loading ? (
+            <div className="space-y-2 animate-pulse">
+              {[90, 70, 80, 60, 75].map((w, i) => (
+                <div key={i} className="h-3.5 bg-muted rounded-full" style={{ width: `${w}%` }} />
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recent Intelligence */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Intelligence</CardTitle>
-          <CardDescription>Latest ingested chunks</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {intelData && intelData.chunks.length > 0 ? (
-            <div className="space-y-2">
-              {intelData.chunks.map((chunk) => (
-                <Link
-                  key={chunk.id}
-                  href={chunk.url || "/intelligence"}
-                  className="flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
-                >
-                  <div className="mt-0.5 text-muted-foreground">
-                    {getSourceIcon(chunk.source)}
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-baseline gap-2">
-                      <p className="font-medium leading-none">{chunk.title}</p>
-                      <span className="text-xs text-muted-foreground">·</span>
-                      <span className="text-xs text-muted-foreground">
-                        {chunk.source}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {formatTimeAgo(chunk.date)}
-                    </p>
-                  </div>
-                </Link>
-              ))}
+          ) : brief ? (
+            <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{brief}</ReactMarkdown>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              No intelligence chunks yet. Check back after the next ingestion.
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Sparkles className="h-4 w-4" />
+              <span>No brief yet. Click "Generate brief" above.</span>
+            </div>
           )}
         </CardContent>
       </Card>
 
+      {/* Situation strip */}
+      <SituationStrip />
+
+      {/* Today's Focus + Intel side by side on large screens */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <TodaysFocus />
+        <IntelHighlights />
+      </div>
+
       {/* Quick Ask */}
       <QuickAsk />
 
-      {/* Quick Actions */}
-      <ConfigurableQuickActions hostname={hostname} />
-
-      {/* DBA Countdown */}
-      <DBACountdownWidget />
-
-      {/* Tailscale Network */}
-      <TailscaleWidget />
-            <Button variant="outline" asChild>
-              <Link href="/projects" className="flex items-center gap-2">
-                <Rocket className="h-4 w-4" />
-                <span>Projects</span>
-              </Link>
-            </Button>
-
-            <Button variant="outline" asChild>
-              <a
-                href={`http://${hostname}:3016`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                <span>DBA Paper</span>
-              </a>
-            </Button>
-
-            <Button variant="outline" asChild>
-              <a
-                href={`http://${hostname}:3007`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2"
-              >
-                <CheckSquare className="h-4 w-4" />
-                <span>BAC Run</span>
-              </a>
-            </Button>
-
-            <Button variant="outline" asChild>
-              <Link href="/board" className="flex items-center gap-2">
-                <Layers className="h-4 w-4" />
-                <span>New Task</span>
-              </Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
