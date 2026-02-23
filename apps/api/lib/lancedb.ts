@@ -187,9 +187,10 @@ export async function intelLastIngest(): Promise<string | null> {
 export async function intelGetById(id: string): Promise<IntelChunk | null> {
   const table = await getTable();
   try {
-    const results = await table.filter(`id = '${id}'`).toArray();
+    // Use query().where() — same pattern as intelListAll (table.filter() returns nothing)
+    const results = await table.query().where(`id = '${id}'`).limit(1).toArray();
     if (results.length === 0) return null;
-    
+
     const r = results[0] as IntelRecord;
     return {
       id: r.id,
