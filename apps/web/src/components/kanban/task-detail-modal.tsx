@@ -24,6 +24,8 @@ import type { KanbanTask } from "./types";
 import type { DocumentWithCreator } from "@clawe/backend/types";
 import { DocumentsSection } from "./_components/documents-section";
 import { DocumentViewerModal } from "./_components/document-viewer-modal";
+import { updateTaskStatus } from "@/lib/api/local";
+import { mutate } from "swr";
 
 function timeAgo(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -77,9 +79,30 @@ export const TaskDetailModal = ({
   const [docsShowAll, setDocsShowAll] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
 
-  // Stub mutations — not connected to Convex in local mode
-  const approve = async () => {};
-  const requestChanges = async (_args: { taskId: string; feedback: string }) => {};
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [statusSuccess, setStatusSuccess] = useState(false);
+
+  const handleStatusChange = async (newStatus: string) => {
+    if (!task || statusUpdating) return;
+    setStatusUpdating(true);
+    try {
+      await updateTaskStatus(task.id, newStatus);
+      setStatusSuccess(true);
+      void mutate("/api/tasks");
+      setTimeout(() => setStatusSuccess(false), 2000);
+    } catch (err) {
+      console.error("Status update failed:", err);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const approve = async () => {
+    await handleStatusChange("done");
+  };
+  const requestChanges = async (_args: { taskId: string; feedback: string }) => {
+    await handleStatusChange("in_progress");
+  };
 
   if (!task) return null;
 
@@ -133,7 +156,7 @@ export const TaskDetailModal = ({
 
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
             {/* Priority & Assignee row */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span
                 className={cn(
                   "rounded-full px-2.5 py-0.5 text-xs font-semibold",
@@ -147,6 +170,38 @@ export const TaskDetailModal = ({
                   Assigned to {task.assignee}
                 </span>
               )}
+              {statusSuccess && (
+                <span className="ml-auto text-xs text-emerald-600 font-medium">✓ Updated in Notion</span>
+              )}
+            </div>
+
+            {/* Status quick-change */}
+            <div>
+              <h4 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+                Move to
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { id: "inbox", label: "Inbox" },
+                  { id: "in_progress", label: "In Progress" },
+                  { id: "review", label: "Review" },
+                  { id: "done", label: "Done" },
+                ]
+                  .filter((s) => s.id !== task.status)
+                  .map((s) => (
+                    <Button
+                      key={s.id}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={statusUpdating}
+                      onClick={() => handleStatusChange(s.id)}
+                    >
+                      {statusUpdating ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                      {s.label}
+                    </Button>
+                  ))}
+              </div>
             </div>
 
             {/* Description */}

@@ -271,54 +271,117 @@ app.get("/api/agents", (_req, res) => {
     };
   }
 
+  function buildAgent(
+    id: string,
+    name: string,
+    role: string,
+    emoji: string,
+    sessionKey: string,
+    data: Record<string, unknown> | null,
+  ) {
+    const activeTasks = (data?.active_tasks as string[] | undefined) ?? [];
+    const completedToday = (data?.completed_today as string[] | undefined) ?? [];
+    const blockers = (data?.blockers as string[] | undefined) ?? [];
+    const needsAttention = data?.needs_attention ?? false;
+    const rawTs = data?.timestamp ?? data?.last_updated;
+    const lastHeartbeat = rawTs
+      ? new Date(String(rawTs)).getTime()
+      : (data ? Date.now() : 0);
+
+    return {
+      _id: id,
+      name,
+      role,
+      emoji,
+      sessionKey,
+      status: data ? deriveStatus(data.health) : "offline",
+      health: (data?.health as string | undefined) ?? "offline",
+      currentActivity: activeTasks[0] ?? null,
+      activeFocus: (data?.active_focus as string | undefined) ?? activeTasks[0] ?? null,
+      activeTasks,
+      completedToday,
+      blockers,
+      needsAttention,
+      notes: (data?.notes as string | undefined) ?? "",
+      lastHeartbeat,
+      // Extended profile fields (passed through from status JSON)
+      session: (data?.session as Record<string, unknown> | undefined) ?? null,
+      profile: (data?.profile as Record<string, unknown> | undefined) ?? null,
+      skills: (data?.skills as string[] | undefined) ?? [],
+      routine: (data?.routine as Record<string, unknown[]> | undefined) ?? null,
+      crons_summary: (data?.crons_summary as Record<string, unknown> | undefined) ?? null,
+      memory_stats: (data?.memory_stats as Record<string, unknown> | undefined) ?? null,
+      fleet: (data?.fleet as Record<string, unknown> | undefined) ?? null,
+      machine_metrics: (data?.machine_metrics as Record<string, unknown> | undefined) ?? null,
+    };
+  }
+
   const agents = [
-    {
-      _id: "aurel",
-      name: "Aurel",
-      role: "Chief of Staff",
-      emoji: "🏛️",
-      sessionKey: "agent:main:main",
-      status: aurelData ? deriveStatus(aurelData.health, aurelHeartbeat) : "offline",
-      health: (aurelData?.health as string) ?? "unknown",
-      currentActivity: (aurelData?.active_tasks as unknown[])?.[0] !== undefined
-        ? String((aurelData!.active_tasks as unknown[])[0]) : null,
-      blockers: (aurelData?.blockers as string[]) ?? [],
-      needsAttention: (aurelData?.needs_attention as string[]) ?? [],
-      completedToday: (aurelData?.completed_today as string[]) ?? [],
-      lastHeartbeat: aurelHeartbeat ?? null,
-      session: getSession("agent:main:main"),
-    },
-    {
-      _id: "soren",
-      name: "Søren",
-      role: "Strategist",
-      emoji: "🧠",
-      sessionKey: "agent:soren:main",
-      status: sorenData ? deriveStatus(sorenData.health, sorenHeartbeat) : "offline",
-      health: (sorenData?.health as string) ?? "unknown",
-      currentActivity: (sorenData?.active_tasks as unknown[])?.[0] !== undefined
-        ? String((sorenData!.active_tasks as unknown[])[0]) : null,
-      blockers: (sorenData?.blockers as string[]) ?? [],
-      needsAttention: (sorenData?.needs_attention as string[]) ?? [],
-      completedToday: (sorenData?.completed_today as string[]) ?? [],
-      lastHeartbeat: sorenHeartbeat ?? null,
-      session: getSession("agent:soren:main"),
-    },
+    buildAgent("aurel", "Aurel", "Chief of Staff", "🏛️", "agent:main:main", aurelData),
+    buildAgent("soren", "Søren", "Strategist", "🧠", "agent:soren:main", sorenData),
   ];
 
   res.json(agents);
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/agents/:id
+// ---------------------------------------------------------------------------
+
+app.get("/api/agents/:id", (_req, res) => {
+  const { id } = _req.params;
+
+  const statusPaths: Record<string, string> = {
+    aurel: path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"),
+    soren: path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+  };
+
+  const agentMeta: Record<string, { name: string; role: string; emoji: string; sessionKey: string }> = {
+    aurel: { name: "Aurel", role: "Chief of Staff", emoji: "🏛️", sessionKey: "agent:main:main" },
+    soren: { name: "Søren", role: "Strategist", emoji: "🧠", sessionKey: "agent:soren:main" },
+  };
+
+  if (!statusPaths[id]) {
+    res.status(404).json({ error: `Agent '${id}' not found` });
+    return;
+  }
+
+  const data = readJsonFile(statusPaths[id]);
+  const meta = agentMeta[id];
+  const activeTasks = (data?.active_tasks as string[] | undefined) ?? [];
+  const completedToday = (data?.completed_today as string[] | undefined) ?? [];
+  const blockers = (data?.blockers as string[] | undefined) ?? [];
+  const rawTs = data?.timestamp ?? data?.last_updated;
+
+  res.json({
+    _id: id,
+    ...meta,
+    status: data ? deriveStatus(data.health) : "offline",
+    health: (data?.health as string | undefined) ?? "offline",
+    currentActivity: activeTasks[0] ?? null,
+    activeFocus: (data?.active_focus as string | undefined) ?? activeTasks[0] ?? null,
+    activeTasks,
+    completedToday,
+    blockers,
+    needsAttention: data?.needs_attention ?? false,
+    notes: (data?.notes as string | undefined) ?? "",
+    lastHeartbeat: rawTs ? new Date(String(rawTs)).getTime() : (data ? Date.now() : 0),
+    raw: data,
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/tasks
 // ---------------------------------------------------------------------------
 
-const NOTION_TODAY_DB = "305ec8c982bb800f980fd862300a9349";
+const NOTION_TODAY_DB = "304ec8c9-82bb-80e3-971b-e91b8acb6bdd"; // CENTAUR Command Center
 
 function mapNotionStatus(status: string): string {
   switch (status) {
+    case "Todo":
     case "Not started":
       return "inbox";
+    case "In Progress":
     case "In progress":
       return "in_progress";
     case "Done":
@@ -348,49 +411,61 @@ app.get("/api/tasks", async (_req, res) => {
       const p = page as Record<string, unknown>;
       const props = p.properties as Record<string, unknown>;
 
-      // Extract title
-      const titleProp = props.Name ?? props.Title ?? props.title;
-      const titleArr = (titleProp as Record<string, unknown>)?.title as
-        | unknown[]
-        | undefined;
-      const title =
-        (
-          titleArr?.[0] as Record<string, unknown> | undefined
-        )?.plain_text?.toString() ?? "Untitled";
+      const getTitle = (key: string): string => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        const arr = (prop?.title ?? prop?.rich_text) as unknown[] | undefined;
+        return arr?.map((t) => (t as Record<string, unknown>).plain_text ?? "").join("").trim() ?? "";
+      };
 
-      // Extract status
-      const statusProp = props.Status ?? props.status;
-      const statusName =
-        (
-          (statusProp as Record<string, unknown>)?.status as
-            | Record<string, unknown>
-            | undefined
-        )?.name?.toString() ?? "";
+      const getSelect = (key: string): string => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        const sel = (prop?.select ?? prop?.status) as Record<string, unknown> | null | undefined;
+        return sel?.name?.toString() ?? "";
+      };
+
+      const getPeople = (key: string): string[] => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        return ((prop?.people as unknown[]) ?? []).map((p: unknown) => (p as Record<string, unknown>).name?.toString() ?? "");
+      };
+
+      const getUrl = (key: string): string => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        return (prop?.url as string) ?? "";
+      };
+
+      const getRichText = (key: string): string => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        return ((prop?.rich_text as unknown[]) ?? []).map((t: unknown) => (t as Record<string, unknown>).plain_text ?? "").join("").trim();
+      };
+
+      const title = getTitle("Name") || getTitle("Title") || "Untitled";
+      const statusName = getSelect("Status");
       const status = mapNotionStatus(statusName);
+      const area = getSelect("Area");
+      const priorityRaw = getSelect("Priority");
+      // Map emoji priority → internal
+      const priority = priorityRaw.includes("High") ? "urgent"
+        : priorityRaw.includes("Medium") ? "normal"
+        : priorityRaw.includes("Low") ? "low"
+        : "normal";
 
-      // Extract assignee from "Assigned to" or "Assignee" property
-      const assigneeProp =
-        props["Assigned to"] ??
-        props.Assignee ??
-        props.assignee ??
-        props.Agent;
-      const selectName = (
-        (assigneeProp as Record<string, unknown>)?.select as
-          | Record<string, unknown>
-          | undefined
-      )?.name
-        ?.toString()
-        .toLowerCase();
+      const notes = getRichText("Notes");
+      const githubUrl = getUrl("GitHub URL");
+      const source = getSelect("Source");
+      const peopleAssignees = getPeople("Assignee");
 
+      // Map people names → agent IDs
       let assigneeIds: string[] = [];
       let assignees: { _id: string; name: string; emoji: string }[] = [];
-
-      if (selectName?.includes("aurel")) {
-        assigneeIds = ["aurel"];
-        assignees = [{ _id: "aurel", name: "Aurel", emoji: "🏛️" }];
-      } else if (selectName?.includes("soren") || selectName?.includes("søren")) {
-        assigneeIds = ["soren"];
-        assignees = [{ _id: "soren", name: "Søren", emoji: "🧠" }];
+      for (const name of peopleAssignees) {
+        const lower = name.toLowerCase();
+        if (lower.includes("aurel")) {
+          assigneeIds.push("aurel");
+          assignees.push({ _id: "aurel", name: "Aurel", emoji: "🏛️" });
+        } else if (lower.includes("soren") || lower.includes("søren") || lower.includes("patrick")) {
+          assigneeIds.push("soren");
+          assignees.push({ _id: "soren", name: "Søren", emoji: "🧠" });
+        }
       }
 
       // Extract priority
@@ -413,9 +488,14 @@ app.get("/api/tasks", async (_req, res) => {
       return {
         _id: p.id as string,
         title,
-        description: "",
+        description: notes,
         status,
+        statusName,
+        area,
         priority,
+        priorityLabel: priorityRaw,
+        githubUrl,
+        source,
         dueDate,
         assigneeIds,
         assignees,
@@ -1767,6 +1847,164 @@ app.get("/api/sessions", (_req, res) => {
   } catch (err) {
     console.error("Sessions error:", err);
     res.status(500).json({ error: "Failed to read sessions" });
+// POST /api/agents/:id/heartbeat
+// ---------------------------------------------------------------------------
+
+const AGENT_STATUS_PATHS: Record<string, string> = {
+  aurel: path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"),
+  soren: path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+};
+
+app.post("/api/agents/:id/heartbeat", express.json(), (req, res) => {
+  const { id } = req.params;
+  const statusPath = AGENT_STATUS_PATHS[id];
+
+  if (!statusPath) {
+    res.status(404).json({ error: `Agent '${id}' not found` });
+    return;
+  }
+
+  try {
+    const existing = readJsonFile(statusPath) ?? {};
+    const updated = {
+      ...existing,
+      ...req.body,
+      agent: id,
+      timestamp: req.body.timestamp ?? new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+    };
+    fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+    fs.writeFileSync(statusPath, JSON.stringify(updated, null, 2));
+    // Notify SSE subscribers
+    notifySSE({ type: "heartbeat", agent: id, data: updated });
+    res.json({ ok: true, agent: id, updatedAt: updated.last_updated });
+  } catch (err) {
+    console.error("Heartbeat write error:", err);
+    res.status(500).json({ error: "Failed to write status" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/events  (Server-Sent Events — real-time agent updates)
+// ---------------------------------------------------------------------------
+
+type SSEClient = { res: import("express").Response; id: number };
+const sseClients: SSEClient[] = [];
+let sseClientId = 0;
+
+function notifySSE(event: Record<string, unknown>) {
+  const data = JSON.stringify(event);
+  for (const client of sseClients) {
+    client.res.write(`data: ${data}\n\n`);
+  }
+}
+
+// Heartbeat ping to keep connections alive
+setInterval(() => notifySSE({ type: "ping", ts: Date.now() }), 25000);
+
+app.get("/api/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders();
+
+  const id = ++sseClientId;
+  sseClients.push({ res, id });
+
+  // Send current agent snapshot immediately on connect
+  const aurel = readJsonFile(AGENT_STATUS_PATHS.aurel);
+  const soren = readJsonFile(AGENT_STATUS_PATHS.soren);
+  res.write(`data: ${JSON.stringify({ type: "snapshot", agents: { aurel, soren } })}\n\n`);
+
+  req.on("close", () => {
+    const idx = sseClients.findIndex((c) => c.id === id);
+    if (idx !== -1) sseClients.splice(idx, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/machines  (multi-machine metrics aggregated from status files)
+// ---------------------------------------------------------------------------
+
+app.get("/api/machines", (_req, res) => {
+  const machines: Array<{
+    id: string;
+    name: string;
+    agent: string;
+    emoji: string;
+    metrics: Record<string, unknown> | null;
+    lastUpdated: string | null;
+  }> = [];
+
+  const entries = [
+    { id: "aurelhost", name: "Aurel's Mac", agent: "aurel", emoji: "🏛️",
+      path: path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json") },
+    { id: "macbook-patrick", name: "Patrick's MacBook", agent: "soren", emoji: "🧠",
+      path: path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json") },
+  ];
+
+  for (const entry of entries) {
+    const data = readJsonFile(entry.path);
+    machines.push({
+      id: entry.id,
+      name: entry.name,
+      agent: entry.agent,
+      emoji: entry.emoji,
+      metrics: (data?.machine_metrics as Record<string, unknown> | undefined) ?? null,
+      lastUpdated: (data?.timestamp as string | undefined) ?? (data?.last_updated as string | undefined) ?? null,
+    });
+  }
+
+  res.json({ machines });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/crons
+// ---------------------------------------------------------------------------
+
+app.get("/api/crons", (_req, res) => {
+  const cronStateFile = path.join(
+    process.env.HOME ?? "/Users/centrick",
+    "clawd/crons/state.json",
+  );
+
+  try {
+    if (fs.existsSync(cronStateFile)) {
+      const raw = fs.readFileSync(cronStateFile, "utf8");
+      res.json(JSON.parse(raw));
+      return;
+    }
+
+    // Fallback: scan cron log files in ~/clawd/crons/logs/
+    const logsDir = path.join(process.env.HOME ?? "/Users/centrick", "clawd/crons/logs");
+    if (!fs.existsSync(logsDir)) {
+      res.json({ crons: [], lastUpdated: null });
+      return;
+    }
+
+    const logFiles = fs.readdirSync(logsDir).filter((f) => f.endsWith(".log"));
+    const crons = logFiles.map((file) => {
+      const content = fs.readFileSync(path.join(logsDir, file), "utf8");
+      const lines = content.split("\n").filter(Boolean);
+      const lastLine = lines[lines.length - 1] ?? "";
+      const errorLines = lines.filter((l) => l.toLowerCase().includes("error") || l.toLowerCase().includes("fail"));
+
+      return {
+        id: file.replace(".log", ""),
+        name: file.replace(".log", "").replace(/-/g, " "),
+        lastRun: null,
+        status: errorLines.length > 0 ? "error" : "ok",
+        errorCount: errorLines.length,
+        lastError: errorLines[errorLines.length - 1] ?? null,
+        lastOutput: lastLine,
+      };
+    });
+
+    res.json({ crons, lastUpdated: new Date().toISOString() });
+  } catch (err) {
+    console.error("Cron state error:", err);
+    res.json({ crons: [], lastUpdated: null });
   }
 });
 
@@ -1804,6 +2042,313 @@ app.get("/api/agents/:id/profile", (req, res) => {
   const status = readJsonFile(statusPath);
 
   res.json({ id: req.params.id, name: profile.name, emoji: profile.emoji, identity, soul, status });
+// GET /api/coordination/feed
+// ---------------------------------------------------------------------------
+
+app.get("/api/coordination/feed", (_req, res) => {
+  const HOME = process.env.HOME ?? "/Users/centrick";
+  const outboxDirs: Array<{ dir: string; agent: string; emoji: string }> = [
+    { dir: path.join(HOME, "clawd/coordination/soren/outbox"), agent: "soren", emoji: "🧠" },
+    { dir: path.join(HOME, "clawd/aurel/outbox"), agent: "aurel", emoji: "🏛️" },
+    // Also try coordination-relative paths
+    { dir: path.join(HOME, "clawd/coordination/aurel/outbox"), agent: "aurel", emoji: "🏛️" },
+  ];
+
+  const messages: Array<{
+    id: string;
+    agent: string;
+    emoji: string;
+    filename: string;
+    date: string;
+    title: string;
+    preview: string;
+    mtime: number;
+  }> = [];
+
+  const seen = new Set<string>();
+
+  for (const { dir, agent, emoji } of outboxDirs) {
+    if (!fs.existsSync(dir)) continue;
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort().reverse();
+    for (const file of files.slice(0, 10)) {
+      const key = `${agent}:${file}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      try {
+        const fullPath = path.join(dir, file);
+        const content = fs.readFileSync(fullPath, "utf8");
+        const mtime = fs.statSync(fullPath).mtimeMs;
+        const lines = content.split("\n").filter(Boolean);
+        const titleLine = lines.find((l) => l.startsWith("# ")) ?? lines[0] ?? file;
+        const title = titleLine.replace(/^#+\s*/, "").trim();
+        const preview = lines.filter((l) => !l.startsWith("#")).slice(0, 2).join(" ").trim();
+
+        messages.push({
+          id: `${agent}-${file}`,
+          agent,
+          emoji,
+          filename: file,
+          date: file.slice(0, 10) || new Date(mtime).toISOString().slice(0, 10),
+          title,
+          preview,
+          mtime,
+        });
+      } catch {
+        // skip unreadable
+      }
+    }
+  }
+
+  messages.sort((a, b) => b.mtime - a.mtime);
+  res.json({ messages: messages.slice(0, 20) });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/tasks/:id/status  (Notion write-back)
+// ---------------------------------------------------------------------------
+
+app.patch("/api/tasks/:id/status", express.json(), async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body as { status: string };
+
+  const notionKey = getNotionKey();
+  if (!notionKey) {
+    res.status(500).json({ error: "NOTION_API_KEY not found" });
+    return;
+  }
+
+  // Map internal status → Notion status name
+  const notionStatusMap: Record<string, string> = {
+    inbox: "Todo",
+    assigned: "Todo",
+    in_progress: "In Progress",
+    review: "Blocked",
+    done: "Done",
+  };
+
+  const notionStatus = notionStatusMap[status];
+  if (!notionStatus) {
+    res.status(400).json({ error: `Unknown status: ${status}` });
+    return;
+  }
+
+  try {
+    await notionRequest(
+      `/v1/pages/${id}`,
+      notionKey,
+      {
+        properties: {
+          Status: { status: { name: notionStatus } },
+        },
+      },
+    );
+    res.json({ ok: true, id, status, notionStatus });
+  } catch (err) {
+    console.error("Notion status update error:", err);
+    res.status(500).json({ error: "Failed to update Notion task" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/repos  (watchlist — Notion DB primary, local JSON fallback)
+// ---------------------------------------------------------------------------
+
+const WATCHLIST_NOTION_DB = "304ec8c982bb8087b0c1fd25895a99a5";
+
+interface WatchlistRepo {
+  id: string;
+  owner: string;
+  repo: string;
+  name: string;
+  category: string;
+  description: string;
+  why: string;
+  added: string;
+  url: string;
+  stars: number | null;
+  trending: boolean;
+  source: string;
+}
+
+// Paginate all results from Notion DB
+async function fetchNotionRepos(notionKey: string): Promise<WatchlistRepo[]> {
+  const repos: WatchlistRepo[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const body: Record<string, unknown> = { page_size: 100 };
+    if (cursor) body.start_cursor = cursor;
+
+    const result = (await notionRequest(
+      `/v1/databases/${WATCHLIST_NOTION_DB}/query`,
+      notionKey,
+      body,
+    )) as { results: unknown[]; has_more: boolean; next_cursor: string | null };
+
+    for (const page of result.results) {
+      const p = page as Record<string, unknown>;
+      const props = p.properties as Record<string, Record<string, unknown>>;
+      const id = p.id as string;
+
+      const getText = (key: string) => {
+        const prop = props[key];
+        if (!prop) return "";
+        if (prop.type === "title") return ((prop.title as unknown[]) ?? []).map((t: unknown) => (t as Record<string, unknown>).plain_text ?? "").join("").trim();
+        if (prop.type === "rich_text") return ((prop.rich_text as unknown[]) ?? []).map((t: unknown) => (t as Record<string, unknown>).plain_text ?? "").join("").trim();
+        if (prop.type === "url") return (prop.url as string) ?? "";
+        if (prop.type === "select") return ((prop.select as Record<string, string> | null)?.name) ?? "";
+        return "";
+      };
+
+      const name = getText("Name");
+      const repo = getText("Repo") || name;
+      const owner = getText("Owner");
+      const category = getText("Category") || "Uncategorized";
+      const description = getText("Description");
+      const why = getText("Why Track");
+      const url = getText("URL") || (owner && repo ? `https://github.com/${owner}/${repo}` : "");
+      const stars = (props.Stars?.number as number | null) ?? null;
+      const trending = (props.Trending?.checkbox as boolean) ?? false;
+      const source = getText("Source") || "manual";
+      const added = (props.Added?.date as Record<string, string> | null)?.start?.slice(0, 10) ?? "";
+
+      repos.push({ id, name, owner, repo, category, description, why, added, url, stars, trending, source });
+    }
+
+    cursor = result.has_more && result.next_cursor ? result.next_cursor : undefined;
+  } while (cursor);
+
+  return repos;
+}
+
+// Simple in-memory cache (5 min TTL)
+let reposCache: { repos: WatchlistRepo[]; ts: number } | null = null;
+
+app.get("/api/repos", async (req, res) => {
+  const notionKey = getNotionKey();
+  const categoryFilter = req.query.category as string | undefined;
+  const search = (req.query.q as string | undefined)?.toLowerCase();
+
+  try {
+    let allRepos: WatchlistRepo[] = [];
+
+    // Try Notion first
+    if (notionKey) {
+      const now = Date.now();
+      if (reposCache && now - reposCache.ts < 5 * 60 * 1000) {
+        allRepos = reposCache.repos;
+      } else {
+        allRepos = await fetchNotionRepos(notionKey);
+        reposCache = { repos: allRepos, ts: now };
+      }
+    }
+
+    // Filter
+    let repos = allRepos;
+    if (categoryFilter && categoryFilter !== "all") {
+      repos = repos.filter((r) => r.category === categoryFilter);
+    }
+    if (search) {
+      repos = repos.filter(
+        (r) =>
+          r.repo.toLowerCase().includes(search) ||
+          r.owner.toLowerCase().includes(search) ||
+          r.name.toLowerCase().includes(search) ||
+          r.description.toLowerCase().includes(search) ||
+          r.why.toLowerCase().includes(search) ||
+          r.category.toLowerCase().includes(search),
+      );
+    }
+
+    // Sort: trending first, then by stars desc
+    repos = repos.sort((a, b) => {
+      if (a.trending && !b.trending) return -1;
+      if (!a.trending && b.trending) return 1;
+      return (b.stars ?? 0) - (a.stars ?? 0);
+    });
+
+    // Categories with counts (from full set)
+    const catMap = new Map<string, number>();
+    for (const r of allRepos) catMap.set(r.category, (catMap.get(r.category) ?? 0) + 1);
+    const categories = Array.from(catMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json({
+      repos,
+      categories,
+      total: allRepos.length,
+      source: notionKey ? "notion" : "local",
+      meta: { lastChecked: new Date().toISOString().slice(0, 10) },
+    });
+  } catch (err) {
+    console.error("Repos read error:", err);
+    res.status(500).json({ error: "Failed to read repos" });
+  }
+});
+
+function getWatchlistDir(): string {
+  const primary = path.join(process.env.HOME ?? "/Users/centrick", "clawd/workspace/watchlist");
+  const fallback = "/Users/patrickjaritz/.openclaw/workspace/watchlist";
+  if (fs.existsSync(path.join(primary, "resources.md"))) return primary;
+  return fallback;
+}
+
+app.get("/api/repos/resources", (_req, res) => {
+  const dir = getWatchlistDir();
+  const resourcesPath = path.join(dir, "resources.md");
+
+  if (!fs.existsSync(resourcesPath)) {
+    return res.json({ content: "" });
+  }
+
+  try {
+    const content = fs.readFileSync(resourcesPath, "utf8");
+    res.json({ content });
+  } catch {
+    res.status(500).json({ error: "Failed to read resources" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/deploy  (git pull + optional restart — callable over Tailscale)
+// ---------------------------------------------------------------------------
+
+app.post("/api/admin/deploy", express.json(), (req, res) => {
+  const { restart = false } = (req.body ?? {}) as { restart?: boolean };
+  const cwd = path.join(process.env.HOME ?? "/Users/centrick", "clawd/clawe");
+
+  try {
+    const pull = execSync("git pull origin main 2>&1", { cwd, encoding: "utf8", timeout: 30000 });
+    const lines = pull.trim().split("\n");
+    const alreadyUpToDate = lines.some((l) => l.includes("Already up to date"));
+
+    let restartLog = "";
+    if (restart && !alreadyUpToDate) {
+      try {
+        restartLog = execSync(
+          "pm2 restart clawe-api clawe-web 2>&1 || launchctl kickstart -k gui/$(id -u)/com.centrick.clawe-api 2>&1 || true",
+          { cwd, encoding: "utf8", timeout: 15000 },
+        );
+      } catch {
+        restartLog = "restart attempted (manual restart may be needed)";
+      }
+    }
+
+    notifySSE({ type: "deploy", pulled: !alreadyUpToDate, log: lines.slice(-3).join(" | ") });
+
+    res.json({
+      ok: true,
+      pulled: !alreadyUpToDate,
+      alreadyUpToDate,
+      log: lines.join("\n"),
+      restartLog: restartLog || null,
+    });
+  } catch (err) {
+    console.error("Deploy error:", err);
+    res.status(500).json({ error: "Deploy failed", detail: String(err) });
+  }
 });
 
 // ---------------------------------------------------------------------------

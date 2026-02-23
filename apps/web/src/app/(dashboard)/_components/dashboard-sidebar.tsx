@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer, Database, GraduationCap, BarChart2, Puzzle, ShieldCheck, MonitorDot, GitMerge } from "lucide-react";
+import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer, BookOpen } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { NavMain, type NavItem } from "./nav-main";
@@ -18,7 +19,7 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@clawe/ui/components/sidebar";
-import { useProjects } from "@/lib/api/local";
+import { useProjects, useCrons } from "@/lib/api/local";
 
 const slideVariants = {
   enterFromRight: { x: "100%", opacity: 0 },
@@ -32,6 +33,7 @@ const SidebarNavContent = () => {
   const router = useRouter();
   const { view, goToSettings } = useSidebarNav();
   const { data: projectsData } = useProjects();
+  const { data: cronsData } = useCrons();
 
   const handleSettingsClick = () => {
     goToSettings();
@@ -43,6 +45,12 @@ const SidebarNavContent = () => {
     if (!projectsData?.projects) return 0;
     return projectsData.projects.filter((p) => p.running).length;
   }, [projectsData]);
+
+  // Count cron errors
+  const cronErrorCount = React.useMemo(() => {
+    if (!cronsData?.crons) return 0;
+    return cronsData.crons.filter((c) => c.status === "error").length;
+  }, [cronsData]);
 
   const navItems: NavItem[] = [
     {
@@ -110,6 +118,15 @@ const SidebarNavContent = () => {
       title: "Weekly Review",
       url: "/weekly-review",
       icon: BarChart2,
+      title: "Watchlist",
+      url: "/repos",
+      icon: BookOpen,
+    },
+    {
+      title: "Crons",
+      url: "/crons",
+      icon: Timer,
+      badge: cronErrorCount > 0 ? String(cronErrorCount) : undefined,
     },
     {
       title: "Settings",
