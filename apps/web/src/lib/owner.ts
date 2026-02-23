@@ -88,3 +88,4 @@ export function getSkillOwner(id: string, name: string, apiOwner?: string): Cron
   if (SYSTEM_SKILL_PATTERNS.some((p) => p.test(combined))) return "system";
   return "aurel";
 }
+// Søren dashboard integration - 20260223203012
