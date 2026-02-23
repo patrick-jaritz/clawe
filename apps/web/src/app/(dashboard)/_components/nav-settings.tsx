@@ -10,6 +10,7 @@ import {
   KeyRound,
   Plug,
   LayoutDashboard,
+  Cpu,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -46,6 +47,11 @@ const settingsItems = [
     title: "Dashboard",
     url: "/settings/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    title: "OpenClaw",
+    url: "/settings/openclaw",
+    icon: Cpu,
   },
   {
     title: "Danger zone",
