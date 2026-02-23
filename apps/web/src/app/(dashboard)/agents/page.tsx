@@ -400,14 +400,6 @@ const AgentsPage = () => {
           ) : agents.length === 0 ? (
             <p className="text-muted-foreground">No agents registered.</p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {(agents as unknown as Agent[]).map((agent) => (
-                <AgentCard
-                  key={agent._id}
-                  agent={agent}
-                  onClick={() => setProfileId(agent._id)}
-                />
-              ))}
             <div className="flex flex-wrap gap-4">
               {agents.map((agent) => {
                 const status = deriveStatus(agent);
@@ -434,7 +426,8 @@ const AgentsPage = () => {
                 return (
                   <div
                     key={agent._id}
-                    className="flex w-80 flex-col rounded-xl border bg-card shadow-sm"
+                    className="flex w-80 flex-col rounded-xl border bg-card shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                    onClick={() => setProfileId(agent._id)}
                   >
                     {/* Header */}
                     <div className="flex items-start justify-between border-b p-4 pb-3">
