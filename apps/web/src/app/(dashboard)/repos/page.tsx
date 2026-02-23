@@ -189,7 +189,16 @@ export default function ReposPage() {
     search || undefined,
   );
 
-  const repos = data?.repos ?? [];
+  // Deduplicate by owner/repo — Notion can return the same repo in multiple rows
+  const repos = useMemo(() => {
+    const seen = new Set<string>();
+    return (data?.repos ?? []).filter((r) => {
+      const key = `${r.owner}/${r.repo}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [data?.repos]);
   const categories = data?.categories ?? [];
   const total = data?.total ?? 0;
   const meta = data?.meta;
