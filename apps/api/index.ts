@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { execSync, spawn } from "child_process";
-import fs from "fs";
+import fs, { readFileSync, writeFileSync } from "fs";
 import path from "path";
 import https from "https";
 import http from "http";
@@ -2360,7 +2360,6 @@ app.listen(PORT, () => {
 });
 
 // ── Mindwtr data proxy ─────────────────────────────────────────────────────
-import { readFileSync, writeFileSync } from "fs";
 const MINDWTR_DATA_PATH = path.join(
   process.env.HOME ?? "/Users/centrick",
   "Library/Application Support/mindwtr/data.json"

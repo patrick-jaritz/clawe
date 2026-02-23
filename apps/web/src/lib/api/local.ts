@@ -639,20 +639,17 @@ export function useMachines() {
 export type CronJob = {
   id: string;
   name: string;
-  schedule: string;
-  agent: string;
-  errorMsg?: string;
-  next: string;
-  last: string;
-  status: string;
-  target: string;
-  agent: string;
   schedule?: string;
-  lastRun: string | null;
+  agent?: string;
+  target?: string;
+  errorMsg?: string;
+  next?: string;
+  last?: string;
+  lastRun?: string | null;
   nextRun?: string | null;
   status: "ok" | "error" | "unknown";
-  errorCount: number;
-  lastError: string | null;
+  errorCount?: number;
+  lastError?: string | null;
   lastOutput?: string | null;
 };
 
