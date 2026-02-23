@@ -294,12 +294,14 @@ app.get("/api/agents/:id", (_req, res) => {
 // GET /api/tasks
 // ---------------------------------------------------------------------------
 
-const NOTION_TODAY_DB = "305ec8c982bb800f980fd862300a9349";
+const NOTION_TODAY_DB = "304ec8c9-82bb-80e3-971b-e91b8acb6bdd"; // CENTAUR Command Center
 
 function mapNotionStatus(status: string): string {
   switch (status) {
+    case "Todo":
     case "Not started":
       return "inbox";
+    case "In Progress":
     case "In progress":
       return "in_progress";
     case "Done":
@@ -329,57 +331,74 @@ app.get("/api/tasks", async (_req, res) => {
       const p = page as Record<string, unknown>;
       const props = p.properties as Record<string, unknown>;
 
-      // Extract title
-      const titleProp = props.Name ?? props.Title ?? props.title;
-      const titleArr = (titleProp as Record<string, unknown>)?.title as
-        | unknown[]
-        | undefined;
-      const title =
-        (
-          titleArr?.[0] as Record<string, unknown> | undefined
-        )?.plain_text?.toString() ?? "Untitled";
+      const getTitle = (key: string): string => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        const arr = (prop?.title ?? prop?.rich_text) as unknown[] | undefined;
+        return arr?.map((t) => (t as Record<string, unknown>).plain_text ?? "").join("").trim() ?? "";
+      };
 
-      // Extract status
-      const statusProp = props.Status ?? props.status;
-      const statusName =
-        (
-          (statusProp as Record<string, unknown>)?.status as
-            | Record<string, unknown>
-            | undefined
-        )?.name?.toString() ?? "";
+      const getSelect = (key: string): string => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        const sel = (prop?.select ?? prop?.status) as Record<string, unknown> | null | undefined;
+        return sel?.name?.toString() ?? "";
+      };
+
+      const getPeople = (key: string): string[] => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        return ((prop?.people as unknown[]) ?? []).map((p: unknown) => (p as Record<string, unknown>).name?.toString() ?? "");
+      };
+
+      const getUrl = (key: string): string => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        return (prop?.url as string) ?? "";
+      };
+
+      const getRichText = (key: string): string => {
+        const prop = props[key] as Record<string, unknown> | undefined;
+        return ((prop?.rich_text as unknown[]) ?? []).map((t: unknown) => (t as Record<string, unknown>).plain_text ?? "").join("").trim();
+      };
+
+      const title = getTitle("Name") || getTitle("Title") || "Untitled";
+      const statusName = getSelect("Status");
       const status = mapNotionStatus(statusName);
+      const area = getSelect("Area");
+      const priorityRaw = getSelect("Priority");
+      // Map emoji priority → internal
+      const priority = priorityRaw.includes("High") ? "urgent"
+        : priorityRaw.includes("Medium") ? "normal"
+        : priorityRaw.includes("Low") ? "low"
+        : "normal";
 
-      // Extract assignee from "Assigned to" or "Assignee" property
-      const assigneeProp =
-        props["Assigned to"] ??
-        props.Assignee ??
-        props.assignee ??
-        props.Agent;
-      const selectName = (
-        (assigneeProp as Record<string, unknown>)?.select as
-          | Record<string, unknown>
-          | undefined
-      )?.name
-        ?.toString()
-        .toLowerCase();
+      const notes = getRichText("Notes");
+      const githubUrl = getUrl("GitHub URL");
+      const source = getSelect("Source");
+      const peopleAssignees = getPeople("Assignee");
 
+      // Map people names → agent IDs
       let assigneeIds: string[] = [];
       let assignees: { _id: string; name: string; emoji: string }[] = [];
-
-      if (selectName?.includes("aurel")) {
-        assigneeIds = ["aurel"];
-        assignees = [{ _id: "aurel", name: "Aurel", emoji: "🏛️" }];
-      } else if (selectName?.includes("soren") || selectName?.includes("søren")) {
-        assigneeIds = ["soren"];
-        assignees = [{ _id: "soren", name: "Søren", emoji: "🧠" }];
+      for (const name of peopleAssignees) {
+        const lower = name.toLowerCase();
+        if (lower.includes("aurel")) {
+          assigneeIds.push("aurel");
+          assignees.push({ _id: "aurel", name: "Aurel", emoji: "🏛️" });
+        } else if (lower.includes("soren") || lower.includes("søren") || lower.includes("patrick")) {
+          assigneeIds.push("soren");
+          assignees.push({ _id: "soren", name: "Søren", emoji: "🧠" });
+        }
       }
 
       return {
         _id: p.id as string,
         title,
-        description: "",
+        description: notes,
         status,
-        priority: "normal",
+        statusName,
+        area,
+        priority,
+        priorityLabel: priorityRaw,
+        githubUrl,
+        source,
         assigneeIds,
         assignees,
         subtasks: [],
@@ -684,9 +703,9 @@ app.patch("/api/tasks/:id/status", express.json(), async (req, res) => {
 
   // Map internal status → Notion status name
   const notionStatusMap: Record<string, string> = {
-    inbox: "Not started",
-    assigned: "Not started",
-    in_progress: "In progress",
+    inbox: "Todo",
+    assigned: "Todo",
+    in_progress: "In Progress",
     review: "Blocked",
     done: "Done",
   };
