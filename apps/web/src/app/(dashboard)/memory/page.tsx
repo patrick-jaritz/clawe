@@ -24,7 +24,7 @@ function parseMemoryBlocks(raw: string): Array<{ tier: string; entity: string; k
   if (!raw) return [];
   const blocks: Array<{ tier: string; entity: string; key: string; value: string; rationale?: string }> = [];
 
-  // Match lines like: - **[📝 fact]** entity/key: value
+  // Format 1 (markdown): - **[📝 fact]** entity/key: value
   const factPattern = /[-•]\s+\*\*\[([^\]]+)\]\*\*\s+([^:]+):\s+(.+)/g;
   let match;
   while ((match = factPattern.exec(raw)) !== null) {
@@ -40,19 +40,18 @@ function parseMemoryBlocks(raw: string): Array<{ tier: string; entity: string; k
     });
   }
 
-  // Also grab decision lines with rationale
-  const decisionPattern = /[-•]\s+\*\*\[decision\]\*\*\s+([^:]+):\s+(.+?)(?:\s+—\s+(.+))?$/gm;
-  while ((match = decisionPattern.exec(raw)) !== null) {
-    const key = match[1] ?? "";
-    const value = match[2] ?? "";
-    const rationale = match[3];
-    blocks.push({
-      tier: "decision",
-      entity: "decision",
-      key: key.trim(),
-      value: value.trim(),
-      rationale: rationale?.trim(),
-    });
+  // Format 2 (CLI): 🔷 entity/key: value — rationale
+  const cliPattern = /🔷\s+([^:]+):\s+(.+?)(?:\s+—\s+(.+?))?(?:\n|$)/gm;
+  while ((match = cliPattern.exec(raw)) !== null) {
+    const entityKey = match[1]?.trim() ?? "";
+    const value = match[2]?.trim() ?? "";
+    const rationale = match[3]?.trim();
+    const slashIdx = entityKey.indexOf("/");
+    const entity = slashIdx !== -1 ? entityKey.slice(0, slashIdx).trim() : "fact";
+    const key = slashIdx !== -1 ? entityKey.slice(slashIdx + 1).trim() : entityKey.trim();
+    // Infer tier from entity
+    const tier = entity === "decision" ? "decision" : entity === "preference" ? "preference" : entity.startsWith("project") ? "project" : "fact";
+    blocks.push({ tier, entity, key, value, rationale });
   }
 
   return blocks;

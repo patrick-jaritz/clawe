@@ -820,20 +820,29 @@ app.get("/api/memory/entity/:entity", (req, res) => {
 
 app.get("/api/crons", (_req, res) => {
   try {
-    const raw = execSync("openclaw cron list --json 2>/dev/null", { encoding: "utf8", timeout: 5000 });
-    const data = JSON.parse(raw) as Array<Record<string, unknown>>;
-
-    const crons = data.map((c) => ({
-      id: String(c.id ?? c.jobId ?? ""),
-      name: String(c.name ?? c.label ?? ""),
-      schedule: String(c.schedule ?? c.expression ?? ""),
-      next: String(c.next ?? c.nextRun ?? ""),
-      last: String(c.last ?? c.lastRun ?? ""),
-      status: String(c.status ?? c.state ?? ""),
-      target: String(c.target ?? c.channel ?? ""),
-      agent: String(c.agent ?? c.agentId ?? ""),
-    }));
-
+    // --json flag hangs; parse the table output instead
+    const raw = execSync("openclaw cron list 2>/dev/null", { encoding: "utf8", timeout: 8000 });
+    const lines = raw.split("\n");
+    // Find the header row (contains "ID" and "Name" and "Schedule")
+    const headerIdx = lines.findIndex((l) => l.includes("ID") && l.includes("Name") && l.includes("Schedule"));
+    const dataLines = headerIdx !== -1 ? lines.slice(headerIdx + 1) : [];
+    const crons: Array<{ id: string; name: string; schedule: string; next: string; last: string; status: string; target: string; agent: string }> = [];
+    for (const line of dataLines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("│") || trimmed.startsWith("◇") || trimmed.startsWith("─") || trimmed.startsWith("|")) continue;
+      // Split on 2+ spaces to extract columns
+      const cols = trimmed.split(/\s{2,}/);
+      if (cols.length < 3) continue;
+      const id = cols[0]?.trim() ?? "";
+      const name = cols[1]?.trim() ?? "";
+      const schedule = cols[2]?.trim() ?? "";
+      const next = cols[3]?.trim() ?? "";
+      const last = cols[4]?.trim() ?? "";
+      const status = cols[5]?.trim() ?? "";
+      const target = cols[6]?.trim() ?? "";
+      const agent = cols[7]?.trim() ?? "";
+      if (id) crons.push({ id, name, schedule, next, last, status, target, agent });
+    }
     res.json({ crons, total: crons.length });
   } catch (err) {
     console.error("Error listing crons:", err);
