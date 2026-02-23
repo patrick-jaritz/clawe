@@ -1356,6 +1356,116 @@ app.post("/api/fleet/refresh", (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Coordination repo endpoints
+// ---------------------------------------------------------------------------
+
+const COORD_DIR = path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination");
+
+function coordPath(...parts: string[]): string {
+  const resolved = path.resolve(path.join(COORD_DIR, ...parts));
+  if (!resolved.startsWith(COORD_DIR)) throw new Error("Path traversal blocked");
+  return resolved;
+}
+
+function readMd(relPath: string): string | null {
+  try {
+    const p = coordPath(relPath);
+    return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : null;
+  } catch { return null; }
+}
+
+// GET /api/coordination/status — git pull + structured view
+app.get("/api/coordination/status", async (_req, res) => {
+  // git pull (non-blocking, best-effort)
+  let pullResult = "skipped";
+  try {
+    const out = execSync(`git -C "${COORD_DIR}" pull --ff-only 2>&1`, { encoding: "utf8", timeout: 6000 });
+    pullResult = out.trim().split("\n").pop() ?? "ok";
+  } catch (e) { pullResult = `error: ${(e as Error).message.slice(0, 60)}`; }
+
+  // Recent git log
+  let gitLog: Array<{ hash: string; msg: string; date: string }> = [];
+  try {
+    const log = execSync(`git -C "${COORD_DIR}" log --oneline --format="%H|%s|%ad" --date=relative -10`, { encoding: "utf8", timeout: 3000 });
+    gitLog = log.trim().split("\n").filter(Boolean).map(l => {
+      const [hash, msg, date] = l.split("|");
+      return { hash: hash?.slice(0, 7) ?? "", msg: msg ?? "", date: date ?? "" };
+    });
+  } catch { /* ignore */ }
+
+  // Soren status
+  const sorenStatus = readJsonFile(path.join(COORD_DIR, "status/soren.json"));
+
+  // List available sync files
+  const syncDir = path.join(COORD_DIR, "sync");
+  let syncFiles: string[] = [];
+  try { syncFiles = fs.readdirSync(syncDir).filter(f => f.endsWith(".md")).sort().reverse().slice(0, 7); } catch { /* ignore */ }
+
+  // List soren daily files
+  const sorenDailyDir = path.join(COORD_DIR, "soren/daily");
+  let sorenDailyFiles: string[] = [];
+  try { sorenDailyFiles = fs.readdirSync(sorenDailyDir).filter(f => f.endsWith(".md")).sort().reverse().slice(0, 5); } catch { /* ignore */ }
+
+  // Aurel outbox
+  const aurelOutboxDir = path.join(COORD_DIR, "aurel/outbox");
+  let aurelOutbox: string[] = [];
+  try { aurelOutbox = fs.readdirSync(aurelOutboxDir).filter(f => f.endsWith(".md")).sort().reverse().slice(0, 5); } catch { /* ignore */ }
+
+  res.json({
+    pullResult,
+    sorenStatus,
+    gitLog,
+    syncFiles,
+    sorenDailyFiles,
+    aurelOutbox,
+    updatedAt: Date.now(),
+  });
+});
+
+// GET /api/coordination/file?path=sync/2026-02-23-sync.md
+app.get("/api/coordination/file", (req, res) => {
+  const relPath = req.query.path as string;
+  if (!relPath) { res.status(400).json({ error: "path required" }); return; }
+  try {
+    const content = readMd(relPath);
+    if (content === null) { res.status(404).json({ error: "File not found" }); return; }
+    res.json({ path: relPath, content });
+  } catch (e) { res.status(403).json({ error: (e as Error).message }); }
+});
+
+// POST /api/coordination/sync — Søren posts a message; CLAWE writes + commits + pushes
+app.post("/api/coordination/sync", express.json(), (req, res) => {
+  const { message, from = "soren", label } = req.body as { message?: string; from?: string; label?: string };
+  if (!message?.trim()) { res.status(400).json({ error: "message required" }); return; }
+
+  try {
+    const tz = "Asia/Jerusalem";
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-CA", { timeZone: tz });
+    const timeStr = now.toLocaleTimeString("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+    const syncFile = path.join(COORD_DIR, "sync", `${dateStr}-sync.md`);
+
+    const entry = `\n## ${timeStr} — ${from}${label ? ` (${label})` : ""}\n\n${message.trim()}\n`;
+
+    // Append (or create) the daily sync file
+    if (fs.existsSync(syncFile)) {
+      fs.appendFileSync(syncFile, entry);
+    } else {
+      fs.writeFileSync(syncFile, `# Sync ${dateStr}\n${entry}`);
+    }
+
+    // Git commit + push (best-effort)
+    try {
+      execSync(`git -C "${COORD_DIR}" add "sync/${dateStr}-sync.md" && git -C "${COORD_DIR}" commit -m "sync: ${from} ${timeStr}" && git -C "${COORD_DIR}" push`, { encoding: "utf8", timeout: 10000 });
+    } catch { /* push may fail — file is still written */ }
+
+    res.json({ ok: true, file: `sync/${dateStr}-sync.md`, time: timeStr });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/sessions — read sessions store directly (no CLI spawn)
 // ---------------------------------------------------------------------------
 

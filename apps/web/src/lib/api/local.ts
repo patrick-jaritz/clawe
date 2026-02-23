@@ -698,3 +698,29 @@ export interface AgentProfile { id: string; name: string; emoji: string; identit
 export function useAgentProfile(id: string | null) {
   return useSWR<AgentProfile>(id ? `/api/agents/${id}/profile` : null, fetcher);
 }
+
+// Coordination
+export interface CoordSorenStatus {
+  agent: string; role: string; timestamp: string; health: string;
+  active_tasks: string[]; completed_today: string[]; blockers: string[];
+  needs_attention: boolean | string[]; next_heartbeat?: string;
+  machine_metrics?: Record<string, string | number>;
+}
+export interface CoordStatus {
+  pullResult: string;
+  sorenStatus: CoordSorenStatus | null;
+  gitLog: Array<{ hash: string; msg: string; date: string }>;
+  syncFiles: string[];
+  sorenDailyFiles: string[];
+  aurelOutbox: string[];
+  updatedAt: number;
+}
+export function useCoordStatus() {
+  return useSWR<CoordStatus>("/api/coordination/status", fetcher, { refreshInterval: 5 * 60 * 1000 });
+}
+export function useCoordFile(relPath: string | null) {
+  return useSWR<{ path: string; content: string }>(
+    relPath ? `/api/coordination/file?path=${encodeURIComponent(relPath)}` : null,
+    fetcher
+  );
+}
