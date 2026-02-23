@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import https from "https";
@@ -82,7 +82,7 @@ function readJsonFile(filePath: string): Record<string, unknown> | null {
   }
 }
 
-const AGENT_STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+const AGENT_STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours (agents run every 30min–4h)
 
 function deriveStatus(health: unknown, lastHeartbeatMs?: number): "online" | "offline" {
   if (lastHeartbeatMs !== undefined) {
@@ -818,49 +818,70 @@ app.get("/api/memory/entity/:entity", (req, res) => {
   }
 });
 
-app.get("/api/crons", (_req, res) => {
-  try {
-    // --json flag hangs; parse the table output instead
-    const raw = execSync("openclaw cron list 2>/dev/null", { encoding: "utf8", timeout: 8000 });
-    const lines = raw.split("\n");
-    // Find the header row to derive fixed column positions
-    const headerIdx = lines.findIndex((l) => l.includes("ID") && l.includes("Name") && l.includes("Schedule"));
-    if (headerIdx === -1) { res.json({ crons: [], total: 0 }); return; }
-    const header = lines[headerIdx];
-    const colStarts: Record<string, number> = {
-      id:       header.indexOf("ID"),
-      name:     header.indexOf("Name"),
-      schedule: header.indexOf("Schedule"),
-      next:     header.indexOf("Next"),
-      last:     header.indexOf("Last"),
-      status:   header.indexOf("Status"),
-      target:   header.indexOf("Target"),
-      agent:    header.indexOf("Agent"),
-    };
-    const getCol = (line: string, start: number, end: number) =>
-      line.slice(start, end).trim().replace(/…$/, "...").trim();
+// In-memory cron cache — refreshed every 5 min in the background
+type CronEntry = { id: string; name: string; schedule: string; next: string; last: string; status: string; target: string; agent: string };
+let cronCache: { crons: CronEntry[]; total: number; updatedAt: number } = { crons: [], total: 0, updatedAt: 0 };
 
-    const dataLines = lines.slice(headerIdx + 1);
-    const crons: Array<{ id: string; name: string; schedule: string; next: string; last: string; status: string; target: string; agent: string }> = [];
-    for (const line of dataLines) {
-      if (!line.trim() || line.trimStart().startsWith("│") || line.trimStart().startsWith("◇") || line.trimStart().startsWith("─")) continue;
-      if (line.length < (colStarts.name ?? 0)) continue;
-      const id = getCol(line, colStarts.id ?? 0, colStarts.name ?? 37);
-      if (!id) continue;
-      const name     = getCol(line, colStarts.name ?? 37,     colStarts.schedule ?? 62);
-      const schedule = getCol(line, colStarts.schedule ?? 62, colStarts.next ?? 95);
-      const next     = getCol(line, colStarts.next ?? 95,     colStarts.last ?? 106);
-      const last     = getCol(line, colStarts.last ?? 106,    colStarts.status ?? 117);
-      const status   = getCol(line, colStarts.status ?? 117,  colStarts.target ?? 127);
-      const target   = getCol(line, colStarts.target ?? 127,  colStarts.agent ?? 137);
-      const agent    = getCol(line, colStarts.agent ?? 137,   line.length);
-      crons.push({ id, name, schedule, next, last, status, target, agent });
-    }
-    res.json({ crons, total: crons.length });
-  } catch (err) {
-    console.error("Error listing crons:", err);
-    res.status(500).json({ error: "Failed to list crons", crons: [] });
+function parseCronTable(raw: string): CronEntry[] {
+  const lines = raw.split("\n");
+  const headerIdx = lines.findIndex((l) => l.includes("ID") && l.includes("Name") && l.includes("Schedule"));
+  if (headerIdx === -1) return [];
+  const header = lines[headerIdx];
+  const colStarts = {
+    id: header.indexOf("ID"), name: header.indexOf("Name"), schedule: header.indexOf("Schedule"),
+    next: header.indexOf("Next"), last: header.indexOf("Last"), status: header.indexOf("Status"),
+    target: header.indexOf("Target"), agent: header.indexOf("Agent"),
+  };
+  const getCol = (line: string, start: number, end: number) => line.slice(start, end).trim();
+  const crons: CronEntry[] = [];
+  for (const line of lines.slice(headerIdx + 1)) {
+    if (!line.trim() || line.trimStart().startsWith("│") || line.trimStart().startsWith("◇") || line.trimStart().startsWith("─")) continue;
+    if (line.length < (colStarts.name ?? 0)) continue;
+    const id = getCol(line, colStarts.id ?? 0, colStarts.name ?? 37);
+    if (!id) continue;
+    crons.push({
+      id, name: getCol(line, colStarts.name ?? 37, colStarts.schedule ?? 62),
+      schedule: getCol(line, colStarts.schedule ?? 62, colStarts.next ?? 95),
+      next: getCol(line, colStarts.next ?? 95, colStarts.last ?? 106),
+      last: getCol(line, colStarts.last ?? 106, colStarts.status ?? 117),
+      status: getCol(line, colStarts.status ?? 117, colStarts.target ?? 127),
+      target: getCol(line, colStarts.target ?? 127, colStarts.agent ?? 137),
+      agent: getCol(line, colStarts.agent ?? 137, line.length),
+    });
   }
+  return crons;
+}
+
+function refreshCronCache() {
+  // Non-blocking: spawn child process so the API event loop stays free
+  const child = spawn("openclaw", ["cron", "list"], { stdio: ["ignore", "pipe", "ignore"] });
+  let raw = "";
+  child.stdout.on("data", (d: Buffer) => { raw += d.toString(); });
+  child.on("close", (code) => {
+    if (code === 0 || raw.includes("ID")) {
+      const crons = parseCronTable(raw);
+      if (crons.length > 0) {
+        cronCache = { crons, total: crons.length, updatedAt: Date.now() };
+        console.log(`[cron-cache] Refreshed: ${crons.length} crons`);
+      }
+    }
+  });
+  child.on("error", (err) => console.error("[cron-cache] spawn error:", err.message));
+  // Kill if still running after 15s
+  setTimeout(() => { try { child.kill(); } catch { /* ok */ } }, 15000);
+}
+
+// Warm the cache on startup + refresh every 5 min
+setTimeout(refreshCronCache, 2000);
+setInterval(refreshCronCache, 5 * 60 * 1000);
+
+app.get("/api/crons", (_req, res) => {
+  // Trigger background refresh if stale (>10 min)
+  if (Date.now() - cronCache.updatedAt > 10 * 60 * 1000) {
+    refreshCronCache();
+  }
+  // Always return immediately from cache (may be empty on very first cold start)
+  res.json({ crons: cronCache.crons, total: cronCache.total, updatedAt: cronCache.updatedAt });
 });
 
 // ---------------------------------------------------------------------------
