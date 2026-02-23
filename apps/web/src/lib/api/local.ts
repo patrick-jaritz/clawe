@@ -289,3 +289,149 @@ export function useRecentIntel() {
     refreshInterval: 60000,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Machines (multi-machine metrics)
+// ---------------------------------------------------------------------------
+
+export type MachineMetrics = {
+  hostname?: string;
+  os?: string;
+  disk_free?: string;
+  disk_used_pct?: string;
+  load_avg_1m?: string;
+  mem_free_mb?: number;
+  uptime?: string;
+  recorded_at?: string;
+};
+
+export type MachineEntry = {
+  id: string;
+  name: string;
+  agent: string;
+  emoji: string;
+  metrics: MachineMetrics | null;
+  lastUpdated: string | null;
+};
+
+export type MachinesResponse = {
+  machines: MachineEntry[];
+};
+
+export function useMachines() {
+  return useSWR<MachinesResponse>("/api/machines", fetcher, {
+    refreshInterval: 60000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Crons
+// ---------------------------------------------------------------------------
+
+export type CronJob = {
+  id: string;
+  name: string;
+  schedule?: string;
+  lastRun: string | null;
+  nextRun?: string | null;
+  status: "ok" | "error" | "unknown";
+  errorCount: number;
+  lastError: string | null;
+  lastOutput?: string | null;
+};
+
+export type CronsResponse = {
+  crons: CronJob[];
+  lastUpdated: string | null;
+};
+
+export function useCrons() {
+  return useSWR<CronsResponse>("/api/crons", fetcher, {
+    refreshInterval: 60000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Coordination feed
+// ---------------------------------------------------------------------------
+
+export type CoordinationMessage = {
+  id: string;
+  agent: string;
+  emoji: string;
+  filename: string;
+  date: string;
+  title: string;
+  preview: string;
+  mtime: number;
+};
+
+export type CoordinationFeedResponse = {
+  messages: CoordinationMessage[];
+};
+
+export function useCoordinationFeed() {
+  return useSWR<CoordinationFeedResponse>("/api/coordination/feed", fetcher, {
+    refreshInterval: 60000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Task status update (Notion write-back)
+// ---------------------------------------------------------------------------
+
+export async function updateTaskStatus(
+  id: string,
+  status: string,
+): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/tasks/${id}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(`Failed to update task: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// SSE hook — real-time agent updates
+// ---------------------------------------------------------------------------
+
+import { useEffect, useRef } from "react";
+import { mutate } from "swr";
+
+export function useAgentSSE() {
+  const esRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const connect = () => {
+      const es = new EventSource("/api/events");
+      esRef.current = es;
+
+      es.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data) as { type: string };
+          if (msg.type === "heartbeat" || msg.type === "snapshot") {
+            // Trigger SWR revalidation for agents
+            void mutate("/api/agents");
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        // Reconnect after 5s
+        setTimeout(connect, 5000);
+      };
+    };
+
+    connect();
+    return () => {
+      esRef.current?.close();
+    };
+  }, []);
+}

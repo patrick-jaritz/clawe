@@ -444,6 +444,277 @@ app.get("/api/activities", (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/agents/:id/heartbeat
+// ---------------------------------------------------------------------------
+
+const AGENT_STATUS_PATHS: Record<string, string> = {
+  aurel: path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"),
+  soren: path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+};
+
+app.post("/api/agents/:id/heartbeat", express.json(), (req, res) => {
+  const { id } = req.params;
+  const statusPath = AGENT_STATUS_PATHS[id];
+
+  if (!statusPath) {
+    res.status(404).json({ error: `Agent '${id}' not found` });
+    return;
+  }
+
+  try {
+    const existing = readJsonFile(statusPath) ?? {};
+    const updated = {
+      ...existing,
+      ...req.body,
+      agent: id,
+      timestamp: req.body.timestamp ?? new Date().toISOString(),
+      last_updated: new Date().toISOString(),
+    };
+    fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+    fs.writeFileSync(statusPath, JSON.stringify(updated, null, 2));
+    // Notify SSE subscribers
+    notifySSE({ type: "heartbeat", agent: id, data: updated });
+    res.json({ ok: true, agent: id, updatedAt: updated.last_updated });
+  } catch (err) {
+    console.error("Heartbeat write error:", err);
+    res.status(500).json({ error: "Failed to write status" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/events  (Server-Sent Events — real-time agent updates)
+// ---------------------------------------------------------------------------
+
+type SSEClient = { res: import("express").Response; id: number };
+const sseClients: SSEClient[] = [];
+let sseClientId = 0;
+
+function notifySSE(event: Record<string, unknown>) {
+  const data = JSON.stringify(event);
+  for (const client of sseClients) {
+    client.res.write(`data: ${data}\n\n`);
+  }
+}
+
+// Heartbeat ping to keep connections alive
+setInterval(() => notifySSE({ type: "ping", ts: Date.now() }), 25000);
+
+app.get("/api/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders();
+
+  const id = ++sseClientId;
+  sseClients.push({ res, id });
+
+  // Send current agent snapshot immediately on connect
+  const aurel = readJsonFile(AGENT_STATUS_PATHS.aurel);
+  const soren = readJsonFile(AGENT_STATUS_PATHS.soren);
+  res.write(`data: ${JSON.stringify({ type: "snapshot", agents: { aurel, soren } })}\n\n`);
+
+  req.on("close", () => {
+    const idx = sseClients.findIndex((c) => c.id === id);
+    if (idx !== -1) sseClients.splice(idx, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/machines  (multi-machine metrics aggregated from status files)
+// ---------------------------------------------------------------------------
+
+app.get("/api/machines", (_req, res) => {
+  const machines: Array<{
+    id: string;
+    name: string;
+    agent: string;
+    emoji: string;
+    metrics: Record<string, unknown> | null;
+    lastUpdated: string | null;
+  }> = [];
+
+  const entries = [
+    { id: "aurelhost", name: "Aurel's Mac", agent: "aurel", emoji: "🏛️",
+      path: path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json") },
+    { id: "macbook-patrick", name: "Patrick's MacBook", agent: "soren", emoji: "🧠",
+      path: path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json") },
+  ];
+
+  for (const entry of entries) {
+    const data = readJsonFile(entry.path);
+    machines.push({
+      id: entry.id,
+      name: entry.name,
+      agent: entry.agent,
+      emoji: entry.emoji,
+      metrics: (data?.machine_metrics as Record<string, unknown> | undefined) ?? null,
+      lastUpdated: (data?.timestamp as string | undefined) ?? (data?.last_updated as string | undefined) ?? null,
+    });
+  }
+
+  res.json({ machines });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/crons
+// ---------------------------------------------------------------------------
+
+app.get("/api/crons", (_req, res) => {
+  const cronStateFile = path.join(
+    process.env.HOME ?? "/Users/centrick",
+    "clawd/crons/state.json",
+  );
+
+  try {
+    if (fs.existsSync(cronStateFile)) {
+      const raw = fs.readFileSync(cronStateFile, "utf8");
+      res.json(JSON.parse(raw));
+      return;
+    }
+
+    // Fallback: scan cron log files in ~/clawd/crons/logs/
+    const logsDir = path.join(process.env.HOME ?? "/Users/centrick", "clawd/crons/logs");
+    if (!fs.existsSync(logsDir)) {
+      res.json({ crons: [], lastUpdated: null });
+      return;
+    }
+
+    const logFiles = fs.readdirSync(logsDir).filter((f) => f.endsWith(".log"));
+    const crons = logFiles.map((file) => {
+      const content = fs.readFileSync(path.join(logsDir, file), "utf8");
+      const lines = content.split("\n").filter(Boolean);
+      const lastLine = lines[lines.length - 1] ?? "";
+      const errorLines = lines.filter((l) => l.toLowerCase().includes("error") || l.toLowerCase().includes("fail"));
+
+      return {
+        id: file.replace(".log", ""),
+        name: file.replace(".log", "").replace(/-/g, " "),
+        lastRun: null,
+        status: errorLines.length > 0 ? "error" : "ok",
+        errorCount: errorLines.length,
+        lastError: errorLines[errorLines.length - 1] ?? null,
+        lastOutput: lastLine,
+      };
+    });
+
+    res.json({ crons, lastUpdated: new Date().toISOString() });
+  } catch (err) {
+    console.error("Cron state error:", err);
+    res.json({ crons: [], lastUpdated: null });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/coordination/feed
+// ---------------------------------------------------------------------------
+
+app.get("/api/coordination/feed", (_req, res) => {
+  const HOME = process.env.HOME ?? "/Users/centrick";
+  const outboxDirs: Array<{ dir: string; agent: string; emoji: string }> = [
+    { dir: path.join(HOME, "clawd/coordination/soren/outbox"), agent: "soren", emoji: "🧠" },
+    { dir: path.join(HOME, "clawd/aurel/outbox"), agent: "aurel", emoji: "🏛️" },
+    // Also try coordination-relative paths
+    { dir: path.join(HOME, "clawd/coordination/aurel/outbox"), agent: "aurel", emoji: "🏛️" },
+  ];
+
+  const messages: Array<{
+    id: string;
+    agent: string;
+    emoji: string;
+    filename: string;
+    date: string;
+    title: string;
+    preview: string;
+    mtime: number;
+  }> = [];
+
+  const seen = new Set<string>();
+
+  for (const { dir, agent, emoji } of outboxDirs) {
+    if (!fs.existsSync(dir)) continue;
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort().reverse();
+    for (const file of files.slice(0, 10)) {
+      const key = `${agent}:${file}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      try {
+        const fullPath = path.join(dir, file);
+        const content = fs.readFileSync(fullPath, "utf8");
+        const mtime = fs.statSync(fullPath).mtimeMs;
+        const lines = content.split("\n").filter(Boolean);
+        const titleLine = lines.find((l) => l.startsWith("# ")) ?? lines[0] ?? file;
+        const title = titleLine.replace(/^#+\s*/, "").trim();
+        const preview = lines.filter((l) => !l.startsWith("#")).slice(0, 2).join(" ").trim();
+
+        messages.push({
+          id: `${agent}-${file}`,
+          agent,
+          emoji,
+          filename: file,
+          date: file.slice(0, 10) || new Date(mtime).toISOString().slice(0, 10),
+          title,
+          preview,
+          mtime,
+        });
+      } catch {
+        // skip unreadable
+      }
+    }
+  }
+
+  messages.sort((a, b) => b.mtime - a.mtime);
+  res.json({ messages: messages.slice(0, 20) });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/tasks/:id/status  (Notion write-back)
+// ---------------------------------------------------------------------------
+
+app.patch("/api/tasks/:id/status", express.json(), async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body as { status: string };
+
+  const notionKey = getNotionKey();
+  if (!notionKey) {
+    res.status(500).json({ error: "NOTION_API_KEY not found" });
+    return;
+  }
+
+  // Map internal status → Notion status name
+  const notionStatusMap: Record<string, string> = {
+    inbox: "Not started",
+    assigned: "Not started",
+    in_progress: "In progress",
+    review: "Blocked",
+    done: "Done",
+  };
+
+  const notionStatus = notionStatusMap[status];
+  if (!notionStatus) {
+    res.status(400).json({ error: `Unknown status: ${status}` });
+    return;
+  }
+
+  try {
+    await notionRequest(
+      `/v1/pages/${id}`,
+      notionKey,
+      {
+        properties: {
+          Status: { status: { name: notionStatus } },
+        },
+      },
+    );
+    res.json({ ok: true, id, status, notionStatus });
+  } catch (err) {
+    console.error("Notion status update error:", err);
+    res.status(500).json({ error: "Failed to update Notion task" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 

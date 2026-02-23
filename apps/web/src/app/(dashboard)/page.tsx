@@ -28,7 +28,7 @@ import {
   MessageCircle,
   AlertTriangle,
 } from "lucide-react";
-import { useSystemHealth, useRecentIntel, useProjects, useAgents } from "@/lib/api/local";
+import { useSystemHealth, useRecentIntel, useProjects, useAgents, useAgentSSE, useMachines } from "@/lib/api/local";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -77,19 +77,37 @@ function getSourceIcon(source: string) {
   }
 }
 
+// DBA papers deadline: end of March 2026
+const DBA_DEADLINE = new Date("2026-03-31T23:59:00");
+const DBA_PAPERS = ["Paper 1: Innovation & Technology", "Paper 2: Leadership", "Paper 3: Strategy"];
+
+function getDbaCountdown() {
+  const now = new Date();
+  const diff = DBA_DEADLINE.getTime() - now.getTime();
+  if (diff <= 0) return { days: 0, hours: 0, urgent: true, overdue: true };
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  return { days, hours, urgent: days <= 14, overdue: false };
+}
+
 export default function HomePage() {
   const { data: healthData } = useSystemHealth();
   const { data: intelData } = useRecentIntel();
   const { data: projectsData } = useProjects();
   const { data: agentsData } = useAgents();
+  const { data: machinesData } = useMachines();
+  useAgentSSE();
 
   const runningProjects = projectsData?.projects?.filter((p) => p.running) || [];
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "localhost";
 
   const needsAttentionAgents = (agentsData ?? []).filter((a) => {
     if (!a.needsAttention) return false;
     if (Array.isArray(a.needsAttention)) return a.needsAttention.length > 0;
     return true;
   });
+
+  const dba = getDbaCountdown();
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -229,15 +247,15 @@ export default function HomePage() {
                   >
                     <div className="flex items-center gap-2">
                       <Circle className="h-2 w-2 fill-green-600 text-green-600" />
-                      <span className="font-medium">{project.name}</span>
+                      <span className="font-medium text-sm">{project.name}</span>
                     </div>
                     <a
-                      href={`http://localhost:${project.port}`}
+                      href={`http://${hostname}:${project.port}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-muted-foreground hover:text-foreground"
+                      className="text-xs text-muted-foreground hover:text-foreground font-mono"
                     >
-                      :{project.port}
+                      :{project.port} ↗
                     </a>
                   </div>
                 ))}
@@ -254,6 +272,78 @@ export default function HomePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* DBA Deadline Countdown */}
+      <Card className={dba.urgent ? "border-orange-300 dark:border-orange-700" : ""}>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              DBA Papers Deadline
+            </CardTitle>
+            <Badge variant={dba.overdue ? "destructive" : dba.urgent ? "secondary" : "outline"}
+              className={dba.urgent && !dba.overdue ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300" : ""}>
+              {dba.overdue ? "OVERDUE" : `${dba.days}d ${dba.hours}h left`}
+            </Badge>
+          </div>
+          <CardDescription>End of March 2026 · 3 papers required</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+            {DBA_PAPERS.map((paper, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
+                <span className="text-muted-foreground">{i + 1}.</span>
+                <span>{paper}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-muted-foreground mt-2 text-xs">
+            Deadline: 31 March 2026 ·{" "}
+            <a href={`http://${hostname}:3016`} target="_blank" rel="noopener noreferrer"
+              className="text-pink-600 hover:underline">
+              Open DBA Assistant →
+            </a>
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Infrastructure / Machines */}
+      {machinesData && machinesData.machines.some((m) => m.metrics) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle>Infrastructure</CardTitle>
+            <CardDescription>Machine health across the network</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {machinesData.machines.map((machine) => (
+                <div key={machine.id} className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span>{machine.emoji}</span>
+                      <span className="font-medium text-sm">{machine.name}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      {machine.metrics?.hostname ?? machine.id}
+                    </span>
+                  </div>
+                  {machine.metrics ? (
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>Disk free: <span className="text-foreground font-medium">{machine.metrics.disk_free ?? "—"}</span></span>
+                      <span>Used: <span className="text-foreground font-medium">{machine.metrics.disk_used_pct ?? "—"}</span></span>
+                      <span>Load: <span className="text-foreground font-medium">{machine.metrics.load_avg_1m ?? "—"}</span></span>
+                      <span>Mem free: <span className="text-foreground font-medium">{machine.metrics.mem_free_mb ? `${machine.metrics.mem_free_mb} MB` : "—"}</span></span>
+                      <span className="col-span-2">Uptime: <span className="text-foreground font-medium">{machine.metrics.uptime ?? "—"}</span></span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No metrics pushed yet</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Intelligence */}
       <Card>
@@ -327,7 +417,7 @@ export default function HomePage() {
 
             <Button variant="outline" asChild>
               <a
-                href="http://localhost:3016"
+                href={`http://${hostname}:3016`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2"
@@ -339,7 +429,7 @@ export default function HomePage() {
 
             <Button variant="outline" asChild>
               <a
-                href="http://localhost:3007"
+                href={`http://${hostname}:3007`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2"

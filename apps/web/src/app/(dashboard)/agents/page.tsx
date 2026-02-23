@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useAgents } from "@/lib/api/local";
+import { useAgents, useCoordinationFeed, useAgentSSE } from "@/lib/api/local";
 import {
   PageHeader,
   PageHeaderRow,
@@ -10,6 +10,7 @@ import {
 } from "@dashboard/page-header";
 import { Badge } from "@clawe/ui/components/badge";
 import { Skeleton } from "@clawe/ui/components/skeleton";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@clawe/ui/components/card";
 import { deriveStatus, type AgentStatus } from "@clawe/shared/agents";
 import { WeeklyRoutineGrid } from "./_components/weekly-routine-grid";
 
@@ -53,6 +54,8 @@ const healthDotColors: Record<string, string> = {
 
 const AgentsPage = () => {
   const { data: agents } = useAgents();
+  const { data: feedData } = useCoordinationFeed();
+  useAgentSSE();
 
   return (
     <>
@@ -178,6 +181,51 @@ const AgentsPage = () => {
         <section>
           <h2 className="mb-4 text-lg font-semibold">Weekly Routines</h2>
           <WeeklyRoutineGrid />
+        </section>
+
+        {/* Coordination Feed */}
+        <section>
+          <h2 className="mb-4 text-lg font-semibold">Coordination Feed</h2>
+          <p className="text-muted-foreground mb-4 text-sm">
+            Recent messages between agents.
+          </p>
+          {!feedData ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <Card key={i}>
+                  <CardContent className="py-3">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="mt-2 h-3 w-2/3" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : feedData.messages.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No messages yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {feedData.messages.map((msg) => (
+                <Card key={msg.id} className="transition-colors hover:bg-muted/30">
+                  <CardContent className="py-3">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 text-xl">{msg.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="text-sm font-medium capitalize">{msg.agent}</span>
+                          <span className="text-muted-foreground text-xs">·</span>
+                          <span className="text-muted-foreground text-xs">{msg.date}</span>
+                        </div>
+                        <p className="mt-0.5 text-sm font-medium leading-snug">{msg.title}</p>
+                        {msg.preview && (
+                          <p className="text-muted-foreground mt-0.5 truncate text-xs">{msg.preview}</p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </>
