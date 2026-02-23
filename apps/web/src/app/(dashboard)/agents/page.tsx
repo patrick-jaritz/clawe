@@ -2,18 +2,17 @@
 
 export const dynamic = "force-dynamic";
 
-import { useAgents, useCrons } from "@/lib/api/local";
+import { useAgents, useCrons, useCoordinationFeed, useAgentSSE } from "@/lib/api/local";
 import { AgentProfileModal } from "@/components/agent-profile-modal";
-import { useAgents, useCoordinationFeed, useAgentSSE } from "@/lib/api/local";
 import {
   PageHeader,
   PageHeaderRow,
   PageHeaderTitle,
 } from "@dashboard/page-header";
 import { Badge } from "@clawe/ui/components/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@clawe/ui/components/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@clawe/ui/components/card";
 import { Skeleton } from "@clawe/ui/components/skeleton";
-import { deriveStatus } from "@clawe/shared/agents";
+import { deriveStatus, type AgentStatus } from "@clawe/shared/agents";
 import {
   Activity,
   AlertTriangle,
@@ -25,8 +24,6 @@ import {
   Timer,
 } from "lucide-react";
 import { useState, useMemo } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@clawe/ui/components/card";
-import { deriveStatus, type AgentStatus } from "@clawe/shared/agents";
 import { WeeklyRoutineGrid } from "./_components/weekly-routine-grid";
 
 // ─── types ────────────────────────────────────────────────────────────────────
