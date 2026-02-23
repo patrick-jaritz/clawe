@@ -1414,13 +1414,34 @@ let fleetCache: FleetStatus | null = null;
 let fleetCacheAt = 0;
 
 async function buildFleetStatus(): Promise<FleetStatus> {
-  // --- Crons (from cache) ---
-  const cronOk = cronCache.crons.filter(c => c.status === "ok" || c.status === "").length;
-  const cronErrors = cronCache.crons.filter(c => c.status === "error").length;
-  const recentErrors = cronCache.crons
+  // --- Crons (from cache + Søren) ---
+  // Aurel's crons from local cache
+  const aurelCronOk = cronCache.crons.filter(c => c.status === "ok" || c.status === "").length;
+  const aurelCronErrors = cronCache.crons.filter(c => c.status === "error").length;
+  const aurelRecentErrors = cronCache.crons
     .filter(c => c.status === "error")
     .slice(0, 5)
-    .map(c => ({ id: c.id, name: c.name, last: c.last }));
+    .map(c => ({ id: c.id, name: `🏛️ ${c.name}`, last: c.last }));
+
+  // Søren's crons from coordination status
+  let sorenCronOk = 0, sorenCronErrors = 0;
+  const sorenRecentErrors: Array<{ id: string; name: string; last: string }> = [];
+  try {
+    const sorenStatusForCrons = readJsonFile(
+      path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+    );
+    const sorenCrons = (sorenStatusForCrons?.crons as Array<Record<string, unknown>> | undefined) ?? [];
+    sorenCronOk = sorenCrons.filter(c => c.status === "ok" || c.status === "").length;
+    sorenCronErrors = sorenCrons.filter(c => c.status === "error").length;
+    sorenCrons
+      .filter(c => c.status === "error")
+      .slice(0, 3)
+      .forEach(c => sorenRecentErrors.push({ id: String(c.id), name: `🧠 ${c.name}`, last: String(c.last ?? "") }));
+  } catch { /* Søren offline */ }
+
+  const cronOk = aurelCronOk + sorenCronOk;
+  const cronErrors = aurelCronErrors + sorenCronErrors;
+  const recentErrors = [...aurelRecentErrors, ...sorenRecentErrors].slice(0, 5);
 
   // --- Agents (from status files) ---
   const aurelData = readJsonFile(path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"));
