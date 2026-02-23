@@ -4,7 +4,7 @@ import useSWR from "swr";
 // This works from any device (Tailscale, mobile, etc.)
 const API_BASE = "";
 
-const fetcher = (url: string) =>
+export const fetcher = (url: string) =>
   fetch(url).then((res) => {
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     return res.json();
