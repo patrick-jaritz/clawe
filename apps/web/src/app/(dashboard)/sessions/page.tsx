@@ -69,20 +69,32 @@ function isActiveSession(updatedAt: number): boolean {
 }
 
 type Filter = "all" | "direct" | "group" | "cron" | "subagent";
+type OwnerFilter = "all" | "Aurel" | "Søren";
+
+const OWNER_FILTERS: { label: string; value: OwnerFilter; emoji: string }[] = [
+  { label: "All", value: "all", emoji: "" },
+  { label: "Aurel", value: "Aurel", emoji: "🏛️" },
+  { label: "Søren", value: "Søren", emoji: "🧠" },
+];
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function SessionsPage() {
   const { data, isLoading, mutate } = useSessions();
   const [filter, setFilter] = useState<Filter>("all");
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
   const [profileId, setProfileId] = useState<string | null>(null);
 
   const FILTERS: Filter[] = ["all", "direct", "group", "subagent", "cron"];
 
   const filtered = useMemo(() => {
     if (!data?.sessions) return [];
-    return filter === "all" ? data.sessions : data.sessions.filter((s) => s.kind === filter);
-  }, [data?.sessions, filter]);
+    return data.sessions.filter((s) => {
+      if (filter !== "all" && s.kind !== filter) return false;
+      if (ownerFilter !== "all" && getSessionOwner(s.key, s.label, s.kind) !== ownerFilter) return false;
+      return true;
+    });
+  }, [data?.sessions, filter, ownerFilter]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: 0 };
@@ -134,13 +146,23 @@ export default function SessionsPage() {
         ))}
       </div>
 
-      {/* Kind filter */}
-      <div className="flex gap-1 mb-4">
-        {FILTERS.map((f) => (
-          <Button key={f} variant={filter === f ? "default" : "ghost"} size="sm" onClick={() => setFilter(f)} className="capitalize text-xs h-7">
-            {f}{counts[f] !== undefined ? <span className="ml-1 opacity-60">{counts[f]}</span> : null}
-          </Button>
-        ))}
+      {/* Kind + Owner filters */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+        <div className="flex gap-1">
+          {FILTERS.map((f) => (
+            <Button key={f} variant={filter === f ? "default" : "ghost"} size="sm" onClick={() => setFilter(f)} className="capitalize text-xs h-7">
+              {f}{counts[f] !== undefined ? <span className="ml-1 opacity-60">{counts[f]}</span> : null}
+            </Button>
+          ))}
+        </div>
+        <div className="w-px h-5 bg-border hidden sm:block" />
+        <div className="flex gap-1">
+          {OWNER_FILTERS.map((f) => (
+            <Button key={f.value} variant={ownerFilter === f.value ? "default" : "ghost"} size="sm" onClick={() => setOwnerFilter(f.value)} className="text-xs h-7">
+              {f.emoji && <span className="mr-1">{f.emoji}</span>}{f.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {/* Explainer */}

@@ -17,21 +17,31 @@ import { useState, useMemo } from "react";
 import { getSkillOwner } from "@/lib/owner";
 import { OwnerBadge } from "@/components/owner-badge";
 
+type OwnerFilter = "all" | "Aurel" | "Søren";
+const OWNER_FILTERS: { label: string; value: OwnerFilter; emoji: string }[] = [
+  { label: "All", value: "all", emoji: "" },
+  { label: "Aurel", value: "Aurel", emoji: "🏛️" },
+  { label: "Søren", value: "Søren", emoji: "🧠" },
+];
+
 const SkillsPage = () => {
   const { data, error, isLoading } = useSkills();
   const [searchQuery, setSearchQuery] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
 
   const filteredSkills = useMemo(() => {
     if (!data?.skills) return [];
     const query = searchQuery.toLowerCase().trim();
-    if (!query) return data.skills;
-    return data.skills.filter(
-      (skill) =>
+    return data.skills.filter((skill) => {
+      if (ownerFilter !== "all" && getSkillOwner(skill.id, skill.name) !== ownerFilter) return false;
+      if (!query) return true;
+      return (
         skill.name.toLowerCase().includes(query) ||
         skill.description.toLowerCase().includes(query) ||
         skill.id.toLowerCase().includes(query)
-    );
-  }, [data?.skills, searchQuery]);
+      );
+    });
+  }, [data?.skills, searchQuery, ownerFilter]);
 
   const stats = useMemo(() => {
     if (!data?.skills) return { total: 0, installed: 0, builtin: 0 };
@@ -70,15 +80,32 @@ const SkillsPage = () => {
           </Card>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search skills by name or description..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
+        {/* Owner filter + Search */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex gap-1">
+            {OWNER_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setOwnerFilter(f.value)}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  ownerFilter === f.value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {f.emoji && <span>{f.emoji}</span>}{f.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search skills by name or description..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
 
         {/* Error state */}

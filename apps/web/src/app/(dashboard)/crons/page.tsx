@@ -2,6 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
+import { useState, useMemo } from "react";
 import { useCrons } from "@/lib/api/local";
 import type { CronJob } from "@/lib/api/local";
 import {
@@ -70,27 +71,55 @@ const statusConfig = {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+type OwnerFilter = "all" | "Aurel" | "Søren";
+const OWNER_FILTERS: { label: string; value: OwnerFilter; emoji: string }[] = [
+  { label: "All", value: "all", emoji: "" },
+  { label: "Aurel", value: "Aurel", emoji: "🏛️" },
+  { label: "Søren", value: "Søren", emoji: "🧠" },
+];
+
 const CronsPage = () => {
   const { data, isLoading } = useCrons();
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
 
   const crons = data?.crons ?? [];
-  const errorCount = crons.filter((c) => c.status === "error").length;
-  const okCount = crons.filter((c) => c.status === "ok").length;
 
   // Errors first, then by name
-  const sorted = [...crons].sort((a, b) =>
-    a.status === "error" ? -1 : b.status === "error" ? 1 : 0,
-  );
+  const sorted = useMemo(() => {
+    const base = [...crons].sort((a, b) =>
+      a.status === "error" ? -1 : b.status === "error" ? 1 : 0,
+    );
+    if (ownerFilter === "all") return base;
+    return base.filter((c) => getCronOwner(c.name, c.agent) === ownerFilter);
+  }, [crons, ownerFilter]);
+
+  const errorCount = sorted.filter((c) => c.status === "error").length;
+  const okCount = sorted.filter((c) => c.status === "ok").length;
 
   return (
     <>
       <PageHeader>
         <PageHeaderRow>
           <PageHeaderTitle>Cron Health</PageHeaderTitle>
-          <Button size="sm" variant="outline" onClick={() => mutate("/api/crons")}>
-            <RefreshCw className="mr-1.5 h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              {OWNER_FILTERS.map((f) => (
+                <Button
+                  key={f.value}
+                  size="sm"
+                  variant={ownerFilter === f.value ? "default" : "ghost"}
+                  onClick={() => setOwnerFilter(f.value)}
+                  className="h-7 text-xs capitalize"
+                >
+                  {f.emoji && <span className="mr-1">{f.emoji}</span>}{f.label}
+                </Button>
+              ))}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => mutate("/api/crons")}>
+              <RefreshCw className="mr-1.5 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </PageHeaderRow>
       </PageHeader>
 
