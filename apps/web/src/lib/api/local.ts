@@ -859,23 +859,6 @@ export function useCoordinationFeed() {
 }
 
 // ---------------------------------------------------------------------------
-// Task status update (Notion write-back)
-// ---------------------------------------------------------------------------
-
-export async function updateTaskStatus(
-  id: string,
-  status: string,
-): Promise<{ ok: boolean }> {
-  const res = await fetch(`${API_BASE}/api/tasks/${id}/status`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-  if (!res.ok) throw new Error(`Failed to update task: ${res.status}`);
-  return res.json();
-}
-
-// ---------------------------------------------------------------------------
 // SSE hook — real-time agent updates
 // ---------------------------------------------------------------------------
 
