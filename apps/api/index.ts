@@ -200,40 +200,94 @@ app.get("/api/agents", (_req, res) => {
     path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
   );
 
+  function buildAgent(
+    id: string,
+    name: string,
+    role: string,
+    emoji: string,
+    sessionKey: string,
+    data: Record<string, unknown> | null,
+  ) {
+    const activeTasks = (data?.active_tasks as string[] | undefined) ?? [];
+    const completedToday = (data?.completed_today as string[] | undefined) ?? [];
+    const blockers = (data?.blockers as string[] | undefined) ?? [];
+    const needsAttention = data?.needs_attention ?? false;
+    const rawTs = data?.timestamp ?? data?.last_updated;
+    const lastHeartbeat = rawTs
+      ? new Date(String(rawTs)).getTime()
+      : (data ? Date.now() : 0);
+
+    return {
+      _id: id,
+      name,
+      role,
+      emoji,
+      sessionKey,
+      status: data ? deriveStatus(data.health) : "offline",
+      health: (data?.health as string | undefined) ?? "offline",
+      currentActivity: activeTasks[0] ?? null,
+      activeFocus: (data?.active_focus as string | undefined) ?? activeTasks[0] ?? null,
+      activeTasks,
+      completedToday,
+      blockers,
+      needsAttention,
+      notes: (data?.notes as string | undefined) ?? "",
+      lastHeartbeat,
+    };
+  }
+
   const agents = [
-    {
-      _id: "aurel",
-      name: "Aurel",
-      role: "Chief of Staff",
-      emoji: "🏛️",
-      sessionKey: "agent:main:main",
-      status: aurelData ? deriveStatus(aurelData.health) : "offline",
-      currentActivity:
-        (aurelData?.active_tasks as unknown[])?.[0] !== undefined
-          ? String((aurelData!.active_tasks as unknown[])[0])
-          : null,
-      lastHeartbeat: aurelData?.last_updated
-        ? new Date(String(aurelData.last_updated)).getTime()
-        : Date.now(),
-    },
-    {
-      _id: "soren",
-      name: "Søren",
-      role: "Strategist",
-      emoji: "🧠",
-      sessionKey: "agent:soren:main",
-      status: sorenData ? deriveStatus(sorenData.health) : "offline",
-      currentActivity:
-        (sorenData?.active_tasks as unknown[])?.[0] !== undefined
-          ? String((sorenData!.active_tasks as unknown[])[0])
-          : null,
-      lastHeartbeat: sorenData?.last_updated
-        ? new Date(String(sorenData.last_updated)).getTime()
-        : Date.now(),
-    },
+    buildAgent("aurel", "Aurel", "Chief of Staff", "🏛️", "agent:main:main", aurelData),
+    buildAgent("soren", "Søren", "Strategist", "🧠", "agent:soren:main", sorenData),
   ];
 
   res.json(agents);
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/agents/:id
+// ---------------------------------------------------------------------------
+
+app.get("/api/agents/:id", (_req, res) => {
+  const { id } = _req.params;
+
+  const statusPaths: Record<string, string> = {
+    aurel: path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"),
+    soren: path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+  };
+
+  const agentMeta: Record<string, { name: string; role: string; emoji: string; sessionKey: string }> = {
+    aurel: { name: "Aurel", role: "Chief of Staff", emoji: "🏛️", sessionKey: "agent:main:main" },
+    soren: { name: "Søren", role: "Strategist", emoji: "🧠", sessionKey: "agent:soren:main" },
+  };
+
+  if (!statusPaths[id]) {
+    res.status(404).json({ error: `Agent '${id}' not found` });
+    return;
+  }
+
+  const data = readJsonFile(statusPaths[id]);
+  const meta = agentMeta[id];
+  const activeTasks = (data?.active_tasks as string[] | undefined) ?? [];
+  const completedToday = (data?.completed_today as string[] | undefined) ?? [];
+  const blockers = (data?.blockers as string[] | undefined) ?? [];
+  const rawTs = data?.timestamp ?? data?.last_updated;
+
+  res.json({
+    _id: id,
+    ...meta,
+    status: data ? deriveStatus(data.health) : "offline",
+    health: (data?.health as string | undefined) ?? "offline",
+    currentActivity: activeTasks[0] ?? null,
+    activeFocus: (data?.active_focus as string | undefined) ?? activeTasks[0] ?? null,
+    activeTasks,
+    completedToday,
+    blockers,
+    needsAttention: data?.needs_attention ?? false,
+    notes: (data?.notes as string | undefined) ?? "",
+    lastHeartbeat: rawTs ? new Date(String(rawTs)).getTime() : (data ? Date.now() : 0),
+    raw: data,
+  });
 });
 
 // ---------------------------------------------------------------------------

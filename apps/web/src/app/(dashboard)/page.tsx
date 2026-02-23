@@ -26,8 +26,9 @@ import {
   Mail,
   Github,
   MessageCircle,
+  AlertTriangle,
 } from "lucide-react";
-import { useSystemHealth, useRecentIntel, useProjects } from "@/lib/api/local";
+import { useSystemHealth, useRecentIntel, useProjects, useAgents } from "@/lib/api/local";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -80,8 +81,15 @@ export default function HomePage() {
   const { data: healthData } = useSystemHealth();
   const { data: intelData } = useRecentIntel();
   const { data: projectsData } = useProjects();
+  const { data: agentsData } = useAgents();
 
   const runningProjects = projectsData?.projects?.filter((p) => p.running) || [];
+
+  const needsAttentionAgents = (agentsData ?? []).filter((a) => {
+    if (!a.needsAttention) return false;
+    if (Array.isArray(a.needsAttention)) return a.needsAttention.length > 0;
+    return true;
+  });
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -94,6 +102,43 @@ export default function HomePage() {
           <p className="mt-1 text-sm text-muted-foreground">{formatDate()}</p>
         </div>
       </div>
+
+      {/* Needs Attention Banner */}
+      {needsAttentionAgents.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-5 w-5" />
+              Needs Attention
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {needsAttentionAgents.map((agent) => (
+              <div key={agent._id} className="flex items-start gap-3">
+                <span className="text-lg">{agent.emoji}</span>
+                <div>
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                    {agent.name}
+                  </p>
+                  {Array.isArray(agent.needsAttention) && agent.needsAttention.length > 0 ? (
+                    <ul className="mt-0.5 space-y-0.5">
+                      {agent.needsAttention.map((item, i) => (
+                        <li key={i} className="text-xs text-amber-700 dark:text-amber-400">
+                          • {item}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      Review required
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Top Grid: System Health + Running Projects */}
       <div className="grid gap-6 md:grid-cols-2">
