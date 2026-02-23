@@ -916,7 +916,7 @@ app.get("/api/memory/entity/:entity", (req, res) => {
 });
 
 // In-memory cron cache — refreshed every 5 min in the background
-type CronEntry = { id: string; name: string; schedule: string; next: string; last: string; status: string; target: string; agent: string; errorMsg?: string };
+type CronEntry = { id: string; name: string; schedule: string; next: string; last: string; status: string; target: string; agent: string; errorMsg?: string; owner?: string };
 let cronCache: { crons: CronEntry[]; total: number; updatedAt: number } = { crons: [], total: 0, updatedAt: 0 };
 
 /** Read last N lines of gateway.log and return map of cronId → latest error message */
@@ -1024,8 +1024,47 @@ app.get("/api/crons", (_req, res) => {
   if (Date.now() - cronCache.updatedAt > 10 * 60 * 1000) {
     refreshCronCache();
   }
-  // Always return immediately from cache (may be empty on very first cold start)
-  res.json({ crons: cronCache.crons, total: cronCache.total, updatedAt: cronCache.updatedAt });
+
+  // Aurel's crons (from local OpenClaw cache) — tag with owner
+  const aurelCrons = cronCache.crons.map((c) => ({ ...c, owner: c.owner ?? "Aurel" }));
+
+  // Søren's crons (from coordination status file)
+  let sorenCrons: CronEntry[] = [];
+  try {
+    const sorenStatus = readJsonFile(
+      path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+    );
+    const raw = (sorenStatus?.crons as Array<Record<string, unknown>> | undefined) ?? [];
+    sorenCrons = raw.map((c) => ({
+      id: String(c.id ?? ""),
+      name: String(c.name ?? ""),
+      schedule: String(c.schedule ?? ""),
+      next: String(c.next ?? ""),
+      last: String(c.last ?? ""),
+      status: String(c.status ?? "ok"),
+      target: String(c.target ?? "isolated"),
+      agent: String(c.agent ?? "main"),
+      errorMsg: c.errorMsg ? String(c.errorMsg) : undefined,
+      owner: "Søren",
+    }));
+  } catch { /* Søren offline */ }
+
+  const allCrons = [...aurelCrons, ...sorenCrons];
+  const aurelCount = aurelCrons.length;
+  const sorenCount = sorenCrons.length;
+
+  res.json({
+    crons: allCrons,
+    total: allCrons.length,
+    updatedAt: cronCache.updatedAt,
+    summary: {
+      total: allCrons.length,
+      byOwner: { Aurel: aurelCount, "Søren": sorenCount },
+      ok: allCrons.filter((c) => c.status === "ok").length,
+      error: allCrons.filter((c) => c.status === "error").length,
+      idle: allCrons.filter((c) => c.status === "idle").length,
+    },
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1993,6 +2032,111 @@ app.get("/api/agents/:id/profile", (req, res) => {
   const status = readJsonFile(statusPath);
 
   res.json({ id: req.params.id, name: profile.name, emoji: profile.emoji, identity, soul, status });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/skills  (aggregated from all agents)
+// ---------------------------------------------------------------------------
+
+app.get("/api/skills", (_req, res) => {
+  const allSkills: Array<{ name: string; owner: string; type: string }> = [];
+
+  // --- Aurel's skills (from local skills directories) ---
+  const aurelBuiltinDir = path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/skills");
+  const aurelCustomDir = path.join(process.env.HOME ?? "/Users/centrick", ".openclaw/workspace/skills");
+
+  for (const dir of [aurelBuiltinDir, aurelCustomDir]) {
+    try {
+      if (fs.existsSync(dir)) {
+        const entries = fs.readdirSync(dir).filter((f) => !f.startsWith("."));
+        for (const e of entries) {
+          allSkills.push({
+            name: e,
+            owner: "Aurel",
+            type: dir === aurelBuiltinDir ? "built-in" : "custom",
+          });
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  // --- Søren's skills (from coordination status file) ---
+  try {
+    const sorenStatus = readJsonFile(
+      path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+    );
+    const sorenSkills = (sorenStatus?.skills as string[] | undefined) ?? [];
+    for (const s of sorenSkills) {
+      allSkills.push({ name: s, owner: "Søren", type: "custom" });
+    }
+  } catch { /* skip */ }
+
+  const byOwner: Record<string, number> = {};
+  for (const s of allSkills) {
+    byOwner[s.owner] = (byOwner[s.owner] ?? 0) + 1;
+  }
+
+  res.json({
+    skills: allSkills,
+    summary: { total: allSkills.length, byOwner },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/sessions  (aggregated session stats from all agents)
+// ---------------------------------------------------------------------------
+
+app.get("/api/sessions", (_req, res) => {
+  const sessions: Array<Record<string, unknown>> = [];
+
+  // --- Aurel's session ---
+  try {
+    const aurelData = readJsonFile(
+      path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"),
+    );
+    if (aurelData) {
+      const s = (aurelData.session as Record<string, unknown> | undefined) ?? {};
+      sessions.push({
+        agent: "Aurel", emoji: "🏛️",
+        model: s.model ?? "claude-sonnet-4-6",
+        sessions_total: s.sessions_total ?? null,
+        memory_chunks: s.memory_chunks ?? null,
+        memory_files: s.memory_files ?? null,
+        agents_active: s.agents_active ?? null,
+        contextTokens: s.contextTokens ?? 200000,
+        totalTokens: s.totalTokens ?? null,
+        updatedAt: s.updatedAt ?? null,
+        health: aurelData.health ?? "unknown",
+        machine: "centrick.local",
+      });
+    }
+  } catch { /* skip */ }
+
+  // --- Søren's session ---
+  try {
+    const sorenData = readJsonFile(
+      path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+    );
+    if (sorenData?.session) {
+      const s = sorenData.session as Record<string, unknown>;
+      sessions.push({
+        agent: "Søren", emoji: "🧠",
+        model: s.model ?? "claude-sonnet-4-6",
+        sessions_total: s.sessions_total ?? null,
+        memory_chunks: s.memory_chunks ?? null,
+        memory_files: s.memory_files ?? null,
+        agents_active: s.agents_active ?? null,
+        contextTokens: s.contextTokens ?? 200000,
+        totalTokens: s.totalTokens ?? null,
+        updatedAt: s.updatedAt ?? null,
+        health: sorenData.health ?? "unknown",
+        machine: (sorenData.profile as Record<string, string> | undefined)?.machine ?? "PatBook-2.local",
+      });
+    }
+  } catch { /* skip */ }
+
+  res.json({ sessions });
+
 });
 
 // GET /api/coordination/feed
