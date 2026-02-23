@@ -2231,14 +2231,18 @@ app.post("/api/admin/deploy", express.json(), (req, res) => {
   try {
     const pull = execSync("git pull origin main 2>&1", { cwd, encoding: "utf8", timeout: 30000 });
     const lines = pull.trim().split("\n");
-    const alreadyUpToDate = lines.some((l) => l.includes("Already up to date"));
+    // Handle both English and German git output
+    const alreadyUpToDate = lines.some((l) =>
+      l.includes("Already up to date") || l.includes("Bereits aktuell")
+    );
 
     let restartLog = "";
     if (restart && !alreadyUpToDate) {
       try {
+        const uid = execSync("id -u", { encoding: "utf8" }).trim();
         restartLog = execSync(
-          "pm2 restart clawe-api clawe-web 2>&1 || launchctl kickstart -k gui/$(id -u)/com.centrick.clawe-api 2>&1 || true",
-          { cwd, encoding: "utf8", timeout: 15000 },
+          `launchctl kickstart -k gui/${uid}/com.centrick.clawe-api 2>&1; launchctl kickstart -k gui/${uid}/com.centrick.clawe-web 2>&1 || true`,
+          { cwd, encoding: "utf8", timeout: 30000 },
         );
       } catch {
         restartLog = "restart attempted (manual restart may be needed)";
