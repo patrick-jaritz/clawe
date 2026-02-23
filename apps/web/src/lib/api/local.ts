@@ -831,8 +831,6 @@ export function useBusiness() {
 export interface Integration { id: string; name: string; icon: string; category: string; status: "connected" | "disconnected" | "unknown"; detail: string; }
 export function useIntegrations() {
   return useSWR<{ integrations: Integration[] }>("/api/integrations", fetcher, { refreshInterval: 2 * 60 * 1000 });
-    refreshInterval: 60000,
-  });
 }
 
 // ---------------------------------------------------------------------------
