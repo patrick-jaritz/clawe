@@ -88,7 +88,6 @@ import { OwnerBadge } from "@/components/owner-badge";
 
 // ─── cron schedule parser ─────────────────────────────────────────────────────
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 function parseDayToken(tok: string): number {
@@ -135,9 +134,36 @@ function cronMatchesDay(rawSchedule: string, dayIndex: number): boolean {
 
 interface RoutineItem { name: string; status: string; agent: string; errorMsg?: string; }
 
+// Full day names for the row layout
+const DAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function CronChip({ c }: { c: RoutineItem }) {
+  const owner = getCronOwner(c.name, c.agent);
+  const isError = c.status === "error";
+  const isDeliveryWarn = !isError && !!c.errorMsg;
+  return (
+    <span
+      title={c.errorMsg ? `${isError ? "Error" : "⚠ Delivery"}: ${c.errorMsg}` : c.name}
+      className={[
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs leading-none",
+        isError
+          ? "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+          : isDeliveryWarn
+          ? "border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-300"
+          : "border-border bg-muted/40 text-foreground/80",
+      ].join(" ")}
+    >
+      <OwnerBadge owner={owner} size="xs" />
+      <span className="max-w-[160px] truncate font-medium">{c.name}</span>
+      {isError && <span className="text-red-500 dark:text-red-400 text-[10px]">✕</span>}
+      {isDeliveryWarn && <span className="text-yellow-600 text-[10px]">⚠</span>}
+    </span>
+  );
+}
+
 function WeeklyRoutineGrid() {
   const { data } = useCrons();
-  const today = new Date().getDay();
+  const todayIndex = new Date().getDay();
 
   const dayMap = useMemo(() => {
     const map: Record<number, RoutineItem[]> = {};
@@ -146,61 +172,63 @@ function WeeklyRoutineGrid() {
     for (const cron of data.crons) {
       for (let d = 0; d < 7; d++) {
         if (cronMatchesDay(cron.schedule ?? "", d)) {
-          map[d].push({ name: cron.name, status: cron.status, agent: cron.agent ?? "main", errorMsg: (cron as { errorMsg?: string }).errorMsg });
+          map[d].push({
+            name: cron.name,
+            status: cron.status,
+            agent: cron.agent ?? "main",
+            errorMsg: (cron as { errorMsg?: string }).errorMsg,
+          });
         }
       }
     }
     return map;
   }, [data?.crons]);
 
+  // Reorder so today is first
+  const orderedDays = Array.from({ length: 7 }, (_, i) => (todayIndex + i) % 7);
+
   return (
-    <div className="grid grid-cols-7 gap-1.5">
-      {DAYS.map((day, dayIndex) => {
-        const isToday = dayIndex === today;
+    <div className="rounded-xl border divide-y overflow-hidden">
+      {orderedDays.map((dayIndex) => {
+        const isToday = dayIndex === todayIndex;
+        const isTomorrow = (dayIndex === (todayIndex + 1) % 7) && !isToday;
         const items = dayMap[dayIndex] ?? [];
+        const errorCount = items.filter((c) => c.status === "error").length;
 
         return (
-          <div key={day} className={`flex min-h-44 flex-col rounded-xl border p-2 ${isToday ? "border-primary/40 bg-primary/5" : ""}`}>
-            <div className="mb-2 flex items-center justify-between">
-              <span className={`text-xs font-medium tracking-wider uppercase ${isToday ? "text-primary" : "text-muted-foreground"}`}>
-                {day}
-              </span>
-              {isToday && (
-                <span className="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold text-primary uppercase">today</span>
-              )}
+          <div
+            key={dayIndex}
+            className={[
+              "flex gap-4 px-4 py-3 items-start",
+              isToday ? "bg-primary/5" : "bg-background",
+            ].join(" ")}
+          >
+            {/* Day label — fixed width so chips line up */}
+            <div className="w-28 shrink-0 pt-0.5">
+              <div className="flex items-center gap-2">
+                <span className={`text-sm font-semibold ${isToday ? "text-primary" : "text-foreground"}`}>
+                  {DAY_FULL[dayIndex]}
+                </span>
+                {isToday && (
+                  <span className="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-bold text-primary uppercase tracking-wide">
+                    today
+                  </span>
+                )}
+                {isTomorrow && (
+                  <span className="text-[9px] text-muted-foreground uppercase tracking-wide">tmrw</span>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {items.length === 0 ? "no crons" : `${items.length} cron${items.length !== 1 ? "s" : ""}${errorCount > 0 ? ` · ${errorCount} err` : ""}`}
+              </p>
             </div>
-            <div className="flex flex-col gap-1">
+
+            {/* Cron chips */}
+            <div className="flex flex-wrap gap-1.5 flex-1 pt-0.5">
               {items.length === 0 ? (
-                <p className="text-[10px] text-muted-foreground italic">—</p>
+                <span className="text-xs text-muted-foreground italic">—</span>
               ) : (
-                items.map((c, i) => {
-                  const owner = getCronOwner(c.name, c.agent);
-                  const isError = c.status === "error";
-                  return (
-                    <div
-                      key={i}
-                      title={isError && c.errorMsg ? `Error: ${c.errorMsg}` : c.name}
-                      className={`rounded px-1 py-0.5 space-y-0.5 ${isError ? "bg-red-50 dark:bg-red-950/30 ring-1 ring-red-200 dark:ring-red-800" : "bg-muted/60"}`}
-                    >
-                      <div className={`text-[10px] leading-tight truncate font-medium ${isError ? "text-red-700 dark:text-red-300" : "text-foreground/80"}`}>
-                        {c.name}
-                      </div>
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <OwnerBadge owner={owner} />
-                        {isError && (
-                          <span className="inline-block rounded px-1 text-[9px] font-semibold bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400">
-                            err
-                          </span>
-                        )}
-                      </div>
-                      {isError && c.errorMsg && (
-                        <div className="text-[9px] text-red-600 dark:text-red-400 truncate" title={c.errorMsg}>
-                          {c.errorMsg}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+                items.map((c, i) => <CronChip key={i} c={c} />)
               )}
             </div>
           </div>
