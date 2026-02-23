@@ -535,9 +535,9 @@ app.post("/api/tasks", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 const NOTION_STATUS_MAP: Record<string, string> = {
-  inbox: "Not started",
-  assigned: "Not started",
-  in_progress: "In progress",
+  inbox: "Todo",
+  assigned: "Todo",
+  in_progress: "In Progress",
   review: "Blocked",
   done: "Done",
 };
