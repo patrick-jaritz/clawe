@@ -366,6 +366,15 @@ app.get("/api/agents/:id", (_req, res) => {
     needsAttention: data?.needs_attention ?? false,
     notes: (data?.notes as string | undefined) ?? "",
     lastHeartbeat: rawTs ? new Date(String(rawTs)).getTime() : (data ? Date.now() : 0),
+    // Extended profile fields
+    session: (data?.session as Record<string, unknown> | undefined) ?? null,
+    profile: (data?.profile as Record<string, unknown> | undefined) ?? null,
+    skills: (data?.skills as string[] | undefined) ?? [],
+    routine: (data?.routine as Record<string, unknown[]> | undefined) ?? null,
+    crons_summary: (data?.crons_summary as Record<string, unknown> | undefined) ?? null,
+    memory_stats: (data?.memory_stats as Record<string, unknown> | undefined) ?? null,
+    fleet: (data?.fleet as Record<string, unknown> | undefined) ?? null,
+    machine_metrics: (data?.machine_metrics as Record<string, unknown> | undefined) ?? null,
     raw: data,
   });
 });
