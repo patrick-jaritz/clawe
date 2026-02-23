@@ -907,10 +907,19 @@ function refreshCronCache() {
       const crons = parseCronTable(raw);
       if (crons.length > 0) {
         // Enrich error crons with log-derived error messages
+        // Gateway log uses cron slugs (e.g. "healthcheck-fleet-20260215"), not UUIDs
         const cronErrors = readCronErrors();
+        const logIds = Object.keys(cronErrors);
         for (const cron of crons) {
           if (cron.status === "error") {
-            cron.errorMsg = cronErrors[cron.id] ?? cronErrors[cron.name] ?? "Unknown error";
+            // Try exact match first, then slug match (log ID contained in cron name or vice versa)
+            const exactMatch = cronErrors[cron.id] ?? cronErrors[cron.name];
+            const fuzzyMatch = logIds.find(lid =>
+              cron.name?.toLowerCase().includes(lid.toLowerCase().replace(/-\d{8,}$/, "")) ||
+              cron.id?.toLowerCase().includes(lid.toLowerCase()) ||
+              lid.toLowerCase().includes(cron.name?.toLowerCase().slice(0, 12) ?? "___")
+            );
+            cron.errorMsg = exactMatch ?? (fuzzyMatch ? cronErrors[fuzzyMatch] : undefined) ?? "Check gateway.log";
           }
         }
         cronCache = { crons, total: crons.length, updatedAt: Date.now() };
@@ -1541,8 +1550,22 @@ app.get("/api/integrations", (_req, res) => {
       name: "Telegram",
       icon: "🤖",
       category: "messaging",
-      status: env.TELEGRAM_BOT_TOKEN ? "connected" : "disconnected",
-      detail: env.TELEGRAM_BOT_TOKEN ? "Bot configured" : "No token",
+      status: (() => {
+        // Token may be in openclaw.json env OR gateway LaunchAgent plist
+        if (env.TELEGRAM_BOT_TOKEN) return "connected";
+        try {
+          const plist = fs.readFileSync(path.join(process.env.HOME ?? "", "Library/LaunchAgents/ai.openclaw.gateway.plist"), "utf8");
+          return plist.includes("TELEGRAM_BOT_TOKEN") ? "connected" : "disconnected";
+        } catch { return "disconnected"; }
+      })() as "connected" | "disconnected",
+      detail: (() => {
+        if (env.TELEGRAM_BOT_TOKEN) return `Bot token set (openclaw.json)`;
+        try {
+          const plist = fs.readFileSync(path.join(process.env.HOME ?? "", "Library/LaunchAgents/ai.openclaw.gateway.plist"), "utf8");
+          if (plist.includes("TELEGRAM_BOT_TOKEN")) return "Bot token set (gateway plist)";
+        } catch { /* */ }
+        return "No token found";
+      })(),
     },
     {
       id: "github",
