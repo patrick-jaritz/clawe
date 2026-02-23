@@ -291,6 +291,42 @@ export function useRecentIntel() {
 }
 
 // ---------------------------------------------------------------------------
+// Repos (watchlist)
+// ---------------------------------------------------------------------------
+
+export type WatchlistRepo = {
+  owner: string;
+  repo: string;
+  category: string;
+  description: string;
+  why: string;
+  added: string;
+  path?: string;
+};
+
+export type RepoCategory = {
+  name: string;
+  count: number;
+};
+
+export type ReposResponse = {
+  repos: WatchlistRepo[];
+  categories: RepoCategory[];
+  meta: { description: string; lastChecked: string; createdAt: string; sources: string[] } | null;
+  total: number;
+};
+
+export function useRepos(category?: string, search?: string) {
+  const params = new URLSearchParams();
+  if (category && category !== "all") params.set("category", category);
+  if (search) params.set("q", search);
+  const qs = params.toString();
+  return useSWR<ReposResponse>(`/api/repos${qs ? `?${qs}` : ""}`, fetcher, {
+    refreshInterval: 300000, // 5 min
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Machines (multi-machine metrics)
 // ---------------------------------------------------------------------------
 

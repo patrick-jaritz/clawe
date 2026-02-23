@@ -715,6 +715,100 @@ app.patch("/api/tasks/:id/status", express.json(), async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/repos  (watchlist repos from github-repos.json + resources.md)
+// ---------------------------------------------------------------------------
+
+interface WatchlistRepo {
+  owner: string;
+  repo: string;
+  category: string;
+  description: string;
+  why: string;
+  added: string;
+  path?: string;
+}
+
+interface WatchlistData {
+  meta: { description: string; lastChecked: string; createdAt: string; sources: string[] };
+  repos: WatchlistRepo[];
+}
+
+const WATCHLIST_DIR = path.join(
+  process.env.HOME ?? "/Users/centrick",
+  "clawd/workspace/watchlist",
+);
+
+// Also check Patrick's workspace path
+const WATCHLIST_DIR_ALT = "/Users/patrickjaritz/.openclaw/workspace/watchlist";
+
+function getWatchlistDir(): string {
+  if (fs.existsSync(path.join(WATCHLIST_DIR, "github-repos.json"))) return WATCHLIST_DIR;
+  if (fs.existsSync(path.join(WATCHLIST_DIR_ALT, "github-repos.json"))) return WATCHLIST_DIR_ALT;
+  return WATCHLIST_DIR;
+}
+
+app.get("/api/repos", (req, res) => {
+  const dir = getWatchlistDir();
+  const reposPath = path.join(dir, "github-repos.json");
+
+  if (!fs.existsSync(reposPath)) {
+    return res.json({ repos: [], categories: [], meta: null });
+  }
+
+  try {
+    const data: WatchlistData = JSON.parse(fs.readFileSync(reposPath, "utf8"));
+    const categoryFilter = req.query.category as string | undefined;
+    const search = (req.query.q as string | undefined)?.toLowerCase();
+
+    let repos = data.repos;
+
+    if (categoryFilter && categoryFilter !== "all") {
+      repos = repos.filter((r) => r.category === categoryFilter);
+    }
+    if (search) {
+      repos = repos.filter(
+        (r) =>
+          r.repo.toLowerCase().includes(search) ||
+          r.owner.toLowerCase().includes(search) ||
+          r.description.toLowerCase().includes(search) ||
+          r.why.toLowerCase().includes(search) ||
+          r.category.toLowerCase().includes(search),
+      );
+    }
+
+    // Extract unique categories with counts
+    const catMap = new Map<string, number>();
+    for (const r of data.repos) {
+      catMap.set(r.category, (catMap.get(r.category) ?? 0) + 1);
+    }
+    const categories = Array.from(catMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json({ repos, categories, meta: data.meta, total: data.repos.length });
+  } catch (err) {
+    console.error("Repos read error:", err);
+    res.status(500).json({ error: "Failed to read repos" });
+  }
+});
+
+app.get("/api/repos/resources", (_req, res) => {
+  const dir = getWatchlistDir();
+  const resourcesPath = path.join(dir, "resources.md");
+
+  if (!fs.existsSync(resourcesPath)) {
+    return res.json({ content: "" });
+  }
+
+  try {
+    const content = fs.readFileSync(resourcesPath, "utf8");
+    res.json({ content });
+  } catch {
+    res.status(500).json({ error: "Failed to read resources" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 
