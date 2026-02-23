@@ -1365,11 +1365,15 @@ app.get("/api/sessions", (_req, res) => {
 
       const origin = s.origin ? (s.origin as Record<string, string>).label ?? "" : "";
 
+      // Normalize model names (strip provider prefix e.g. "x-ai/grok-4.1-fast" → "grok-4.1-fast")
+      const rawModel = (s.model as string) ?? "unknown";
+      const model = rawModel.includes("/") ? rawModel.split("/").pop()! : rawModel;
+
       return {
         key,
         label,
         kind,
-        model: (s.model as string) ?? "unknown",
+        model,
         modelProvider: (s.modelProvider as string) ?? "",
         updatedAt,
         ageLabel,
