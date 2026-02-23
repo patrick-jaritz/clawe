@@ -14,6 +14,8 @@ import { Button } from "@clawe/ui/components/button";
 import { Input } from "@clawe/ui/components/input";
 import { Skeleton } from "@clawe/ui/components/skeleton";
 import { Search, Brain, Lightbulb, RefreshCw } from "lucide-react";
+import { getMemoryOwner } from "@/lib/owner";
+import { OwnerBadge } from "@/components/owner-badge";
 import { cn } from "@clawe/ui/lib/utils";
 import { mutate } from "swr";
 
@@ -179,6 +181,7 @@ const MemoryPage = () => {
                 <span className="text-xs font-medium text-foreground truncate">
                   {block.key}
                 </span>
+                <OwnerBadge owner={getMemoryOwner(block.entity, block.key)} />
               </div>
               <p className="text-sm leading-relaxed">{block.value}</p>
               {block.rationale && (

@@ -14,6 +14,8 @@ import { Badge } from "@clawe/ui/components/badge";
 import { Button } from "@clawe/ui/components/button";
 import { Skeleton } from "@clawe/ui/components/skeleton";
 import { RefreshCw, Bot, Timer, MessageSquare, Users, Zap, XCircle, Circle, Info } from "lucide-react";
+import { getSessionOwner } from "@/lib/owner";
+import { OwnerBadge } from "@/components/owner-badge";
 import { useState, useMemo } from "react";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -170,6 +172,7 @@ export default function SessionsPage() {
             {filtered.map((s) => {
               const isMain = s.key === "agent:main:main";
               const active = isActiveSession(s.updatedAt);
+              const owner = getSessionOwner(s.key, s.label, s.kind);
               return (
                 <tr key={s.key} className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${isMain ? "bg-primary/5" : ""}`}>
                   <td className="px-3 py-2 text-center">
@@ -198,7 +201,10 @@ export default function SessionsPage() {
                       ) : (
                         <span className="font-mono text-xs">{s.label}</span>
                       )}
-                      {s.origin && <span className="text-xs text-muted-foreground truncate max-w-xs">{s.origin}</span>}
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <OwnerBadge owner={owner} />
+                        {s.origin && <span className="text-xs text-muted-foreground truncate max-w-xs">{s.origin}</span>}
+                      </div>
                     </div>
                   </td>
                   <td className="px-3 py-2">

@@ -83,6 +83,9 @@ function healthDot(health: string) {
   return "bg-red-500";
 }
 
+import { getCronOwner, OWNER_STYLE, type CronOwner } from "@/lib/owner";
+import { OwnerBadge } from "@/components/owner-badge";
+
 // ─── cron schedule parser ─────────────────────────────────────────────────────
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -126,28 +129,7 @@ function cronMatchesDay(rawSchedule: string, dayIndex: number): boolean {
   });
 }
 
-// ─── cron owner detection ─────────────────────────────────────────────────────
-
-type CronOwner = "aurel" | "soren" | "system";
-
-const SYSTEM_PATTERNS = [
-  /fleet.health/i, /agent.health/i, /watchdog/i, /orchestrator/i,
-  /nightly.memory/i, /daily.log/i, /memory.auto/i, /memory.janitor/i,
-  /maintenance/i,
-];
-const SOREN_PATTERNS = [/soren/i];
-
-function getCronOwner(name: string, agent: string): CronOwner {
-  if (SOREN_PATTERNS.some((p) => p.test(name))) return "soren";
-  if (SYSTEM_PATTERNS.some((p) => p.test(name)) || agent.startsWith("mainten") || agent.startsWith("orchest")) return "system";
-  return "aurel";
-}
-
-const OWNER_STYLE: Record<CronOwner, { label: string; cls: string }> = {
-  aurel:  { label: "Aurel",  cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
-  soren:  { label: "Søren",  cls: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" },
-  system: { label: "Sys",    cls: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
-};
+// getCronOwner, OWNER_STYLE, CronOwner imported from @/lib/owner above
 
 // ─── Weekly Routines ─────────────────────────────────────────────────────────
 
@@ -193,7 +175,6 @@ function WeeklyRoutineGrid() {
               ) : (
                 items.map((c, i) => {
                   const owner = getCronOwner(c.name, c.agent);
-                  const ownerStyle = OWNER_STYLE[owner];
                   const isError = c.status === "error";
                   return (
                     <div
@@ -205,9 +186,7 @@ function WeeklyRoutineGrid() {
                         {c.name}
                       </div>
                       <div className="flex items-center gap-1 flex-wrap">
-                        <span className={`inline-block rounded px-1 text-[9px] font-semibold ${ownerStyle.cls}`}>
-                          {ownerStyle.label}
-                        </span>
+                        <OwnerBadge owner={owner} />
                         {isError && (
                           <span className="inline-block rounded px-1 text-[9px] font-semibold bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400">
                             err

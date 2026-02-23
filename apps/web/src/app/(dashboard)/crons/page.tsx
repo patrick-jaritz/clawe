@@ -13,6 +13,8 @@ import { Card } from "@clawe/ui/components/card";
 import { Skeleton } from "@clawe/ui/components/skeleton";
 import { cn } from "@clawe/ui/lib/utils";
 import { CheckCircle2, XCircle, Clock, RefreshCw } from "lucide-react";
+import { getCronOwner } from "@/lib/owner";
+import { OwnerBadge } from "@/components/owner-badge";
 import { mutate } from "swr";
 import { Button } from "@clawe/ui/components/button";
 
@@ -65,6 +67,7 @@ const CronsPage = () => {
           const isOk = cron.status === "ok";
           const isError = cron.status === "error";
           const hasDeliveryWarn = !isError && !!(cron as { errorMsg?: string }).errorMsg;
+          const owner = getCronOwner(cron.name, cron.agent);
 
           return (
             <Card key={cron.id} className={cn(
@@ -93,6 +96,7 @@ const CronsPage = () => {
                     >
                       {cron.status || "unknown"}
                     </Badge>
+                    <OwnerBadge owner={owner} size="sm" />
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
                     {cron.schedule}

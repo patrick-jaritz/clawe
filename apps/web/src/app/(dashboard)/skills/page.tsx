@@ -14,6 +14,8 @@ import { Skeleton } from "@clawe/ui/components/skeleton";
 import { Input } from "@clawe/ui/components/input";
 import { Search } from "lucide-react";
 import { useState, useMemo } from "react";
+import { getSkillOwner } from "@/lib/owner";
+import { OwnerBadge } from "@/components/owner-badge";
 
 const SkillsPage = () => {
   const { data, error, isLoading } = useSkills();
@@ -118,6 +120,7 @@ const SkillsPage = () => {
                   {skill.description || "No description available."}
                 </p>
                 <div className="flex flex-wrap gap-1.5 mt-3">
+                  <OwnerBadge owner={getSkillOwner(skill.id, skill.name)} size="sm" />
                   {skill.installed && (
                     <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
                       Installed
