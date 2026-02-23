@@ -7,7 +7,6 @@ import {
   PageHeader,
   PageHeaderRow,
   PageHeaderTitle,
-  PageHeaderSubtitle,
 } from "@dashboard/page-header";
 import { Badge } from "@clawe/ui/components/badge";
 import { Card } from "@clawe/ui/components/card";
@@ -47,9 +46,9 @@ const SkillsPage = () => {
         <PageHeaderRow>
           <PageHeaderTitle>Skills</PageHeaderTitle>
         </PageHeaderRow>
-        <PageHeaderSubtitle>
+        <p className="text-sm text-muted-foreground mt-1">
           OpenClaw capabilities installed on this host
-        </PageHeaderSubtitle>
+        </p>
       </PageHeader>
 
       <div className="space-y-6">
