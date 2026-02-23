@@ -69,12 +69,12 @@ function isActiveSession(updatedAt: number): boolean {
 }
 
 type Filter = "all" | "direct" | "group" | "cron" | "subagent";
-type OwnerFilter = "all" | "Aurel" | "Søren";
+type OwnerFilter = "all" | "aurel" | "soren";
 
 const OWNER_FILTERS: { label: string; value: OwnerFilter; emoji: string }[] = [
-  { label: "All", value: "all", emoji: "" },
-  { label: "Aurel", value: "Aurel", emoji: "🏛️" },
-  { label: "Søren", value: "Søren", emoji: "🧠" },
+  { label: "All",   value: "all",   emoji: "" },
+  { label: "Aurel", value: "aurel", emoji: "🏛️" },
+  { label: "Søren", value: "soren", emoji: "🧠" },
 ];
 
 // ─── page ─────────────────────────────────────────────────────────────────────
