@@ -1267,8 +1267,36 @@ app.get("/api/skills", (_req, res) => {
     const emojiM = content.match(/"emoji":\s*"([^"]+)"/);
     skills.push({ id: name, name: nameM?.[1].trim() ?? name, description: descM?.[1].trim().slice(0,200) ?? "", emoji: emojiM?.[1] ?? "🔧", installed: true, builtin: false, requires: [], location: skillPath });
   }
+  // Tag all local skills as Aurel's
+  for (const s of skills) { (s as Record<string, unknown>).owner = "Aurel"; }
+
+  // --- Søren's skills (from coordination status file) ---
+  try {
+    const sorenStatus = readJsonFile(
+      path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+    );
+    const sorenSkills = (sorenStatus?.skills as string[] | undefined) ?? [];
+    for (const name of sorenSkills) {
+      if (skills.find(s => s.id === name)) continue; // skip duplicates
+      skills.push({
+        id: name,
+        name,
+        description: "",
+        emoji: "🧠",
+        installed: true,
+        builtin: false,
+        requires: [],
+        location: `soren:${name}`,
+        owner: "Søren",
+      } as SkillEntry & { owner: string });
+    }
+  } catch { /* Søren offline */ }
+
+  const byOwner: Record<string, number> = {};
+  for (const s of skills) { byOwner[(s as Record<string, unknown>).owner as string ?? "Aurel"] = (byOwner[(s as Record<string, unknown>).owner as string ?? "Aurel"] ?? 0) + 1; }
+
   skills.sort((a, b) => a.name.localeCompare(b.name));
-  res.json({ skills, total: skills.length });
+  res.json({ skills, total: skills.length, byOwner });
 });
 
 // heartbeat — see POST /api/agents/:id/heartbeat (SSE version below)
@@ -1871,13 +1899,48 @@ app.get("/api/sessions", (_req, res) => {
 
     sessions.sort((a, b) => b.updatedAt - a.updatedAt);
 
+    // Tag all local sessions as Aurel's
+    for (const s of sessions) { (s as Record<string, unknown>).owner = "Aurel"; }
+
+    // --- Søren's session summary (from coordination status) ---
+    try {
+      const sorenData = readJsonFile(
+        path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+      );
+      if (sorenData?.session) {
+        const ss = sorenData.session as Record<string, unknown>;
+        sessions.unshift({
+          key: "soren:main",
+          label: "Søren (main)",
+          kind: "direct" as const,
+          model: String(ss.model ?? "claude-sonnet-4-6").split("/").pop()!,
+          modelProvider: String(ss.model ?? "").split("/")[0] ?? "anthropic",
+          updatedAt: (ss.updatedAt as number) ?? 0,
+          ageLabel: "remote",
+          contextTokens: (ss.contextTokens as number) ?? 200000,
+          totalTokens: (ss.totalTokens as number) ?? 0,
+          inputTokens: (ss.inputTokens as number) ?? 0,
+          outputTokens: (ss.outputTokens as number) ?? 0,
+          aborted: false,
+          origin: "PatBook-2.local",
+          owner: "Søren",
+          sessions_total: ss.sessions_total ?? null,
+          memory_chunks: ss.memory_chunks ?? null,
+          agents_active: ss.agents_active ?? null,
+        } as typeof sessions[0] & Record<string, unknown>);
+      }
+    } catch { /* Søren offline */ }
+
     // Model summary
     const modelSummary: Record<string, number> = {};
     for (const s of sessions) {
       modelSummary[s.model] = (modelSummary[s.model] ?? 0) + 1;
     }
 
-    res.json({ total: sessions.length, sessions, modelSummary });
+    const byOwner: Record<string, number> = {};
+    for (const s of sessions) { byOwner[(s as Record<string, unknown>).owner as string ?? "Aurel"] = (byOwner[(s as Record<string, unknown>).owner as string ?? "Aurel"] ?? 0) + 1; }
+
+    res.json({ total: sessions.length, sessions, modelSummary, byOwner });
   } catch (err) {
     console.error("Sessions error:", err);
     res.status(500).json({ error: "Failed to read sessions" });
@@ -2034,110 +2097,7 @@ app.get("/api/agents/:id/profile", (req, res) => {
   res.json({ id: req.params.id, name: profile.name, emoji: profile.emoji, identity, soul, status });
 });
 
-// ---------------------------------------------------------------------------
-// GET /api/skills  (aggregated from all agents)
-// ---------------------------------------------------------------------------
-
-app.get("/api/skills", (_req, res) => {
-  const allSkills: Array<{ name: string; owner: string; type: string }> = [];
-
-  // --- Aurel's skills (from local skills directories) ---
-  const aurelBuiltinDir = path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/skills");
-  const aurelCustomDir = path.join(process.env.HOME ?? "/Users/centrick", ".openclaw/workspace/skills");
-
-  for (const dir of [aurelBuiltinDir, aurelCustomDir]) {
-    try {
-      if (fs.existsSync(dir)) {
-        const entries = fs.readdirSync(dir).filter((f) => !f.startsWith("."));
-        for (const e of entries) {
-          allSkills.push({
-            name: e,
-            owner: "Aurel",
-            type: dir === aurelBuiltinDir ? "built-in" : "custom",
-          });
-        }
-      }
-    } catch { /* skip */ }
-  }
-
-  // --- Søren's skills (from coordination status file) ---
-  try {
-    const sorenStatus = readJsonFile(
-      path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
-    );
-    const sorenSkills = (sorenStatus?.skills as string[] | undefined) ?? [];
-    for (const s of sorenSkills) {
-      allSkills.push({ name: s, owner: "Søren", type: "custom" });
-    }
-  } catch { /* skip */ }
-
-  const byOwner: Record<string, number> = {};
-  for (const s of allSkills) {
-    byOwner[s.owner] = (byOwner[s.owner] ?? 0) + 1;
-  }
-
-  res.json({
-    skills: allSkills,
-    summary: { total: allSkills.length, byOwner },
-  });
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/sessions  (aggregated session stats from all agents)
-// ---------------------------------------------------------------------------
-
-app.get("/api/sessions", (_req, res) => {
-  const sessions: Array<Record<string, unknown>> = [];
-
-  // --- Aurel's session ---
-  try {
-    const aurelData = readJsonFile(
-      path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"),
-    );
-    if (aurelData) {
-      const s = (aurelData.session as Record<string, unknown> | undefined) ?? {};
-      sessions.push({
-        agent: "Aurel", emoji: "🏛️",
-        model: s.model ?? "claude-sonnet-4-6",
-        sessions_total: s.sessions_total ?? null,
-        memory_chunks: s.memory_chunks ?? null,
-        memory_files: s.memory_files ?? null,
-        agents_active: s.agents_active ?? null,
-        contextTokens: s.contextTokens ?? 200000,
-        totalTokens: s.totalTokens ?? null,
-        updatedAt: s.updatedAt ?? null,
-        health: aurelData.health ?? "unknown",
-        machine: "centrick.local",
-      });
-    }
-  } catch { /* skip */ }
-
-  // --- Søren's session ---
-  try {
-    const sorenData = readJsonFile(
-      path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
-    );
-    if (sorenData?.session) {
-      const s = sorenData.session as Record<string, unknown>;
-      sessions.push({
-        agent: "Søren", emoji: "🧠",
-        model: s.model ?? "claude-sonnet-4-6",
-        sessions_total: s.sessions_total ?? null,
-        memory_chunks: s.memory_chunks ?? null,
-        memory_files: s.memory_files ?? null,
-        agents_active: s.agents_active ?? null,
-        contextTokens: s.contextTokens ?? 200000,
-        totalTokens: s.totalTokens ?? null,
-        updatedAt: s.updatedAt ?? null,
-        health: sorenData.health ?? "unknown",
-        machine: (sorenData.profile as Record<string, string> | undefined)?.machine ?? "PatBook-2.local",
-      });
-    }
-  } catch { /* skip */ }
-
-  res.json({ sessions });
-
-});
+// (Søren's skills + sessions are now merged into the primary /api/skills and /api/sessions handlers above)
 
 // GET /api/coordination/feed
 // ---------------------------------------------------------------------------
