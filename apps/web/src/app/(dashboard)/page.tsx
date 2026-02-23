@@ -35,7 +35,15 @@ import {
   RefreshCw,
   Send,
   Timer,
+  Database,
+  Globe,
+  Plus,
+  type LucideIcon,
 } from "lucide-react";
+import {
+  ALL_QUICK_ACTIONS,
+  getEnabledActionIds,
+} from "@/lib/quick-actions-config";
 import {
   useSystemHealth,
   useRecentIntel,
@@ -113,6 +121,71 @@ function getDeadlineBg(days: number): string {
   if (days <= 14) return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
   if (days <= 30) return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
   return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
+}
+
+// ── Icon map for quick actions ─────────────────────────────────────────────
+
+const ACTION_ICON_MAP: Record<string, LucideIcon> = {
+  ClipboardList, Brain, Rocket, FileText, CheckSquare,
+  Layers, Timer, Database, Globe, Plus,
+};
+
+// ── Configurable Quick Actions ─────────────────────────────────────────────
+
+function ConfigurableQuickActions({ hostname }: { hostname: string }) {
+  const [enabledIds, setEnabledIds] = React.useState<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    setEnabledIds(getEnabledActionIds());
+  }, []);
+
+  const actions = ALL_QUICK_ACTIONS.filter((a) => enabledIds.has(a.id));
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>Jump to common tasks — or press ⌘K</CardDescription>
+          </div>
+          <Link href="/settings/dashboard" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+            Customize →
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {actions.map((action) => {
+            const Icon = ACTION_ICON_MAP[action.icon] ?? ClipboardList;
+            const href = action.external
+              ? `http://${hostname}:${action.href.replace("PORT:", "")}`
+              : action.href;
+            return (
+              <Button key={action.id} variant="outline" size="sm" asChild>
+                {action.external ? (
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    <span className="truncate">{action.label}</span>
+                  </a>
+                ) : (
+                  <Link href={href} className="flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    <span className="truncate">{action.label}</span>
+                  </Link>
+                )}
+              </Button>
+            );
+          })}
+          {actions.length === 0 && (
+            <Link href="/settings/dashboard" className="col-span-full text-sm text-muted-foreground hover:text-foreground">
+              No quick actions configured. Click to add →
+            </Link>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function formatUptime(startedAt: number): string {
@@ -616,67 +689,7 @@ export default function HomePage() {
       <QuickAsk />
 
       {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Jump to common tasks — or press ⌘K</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6">
-            <Button variant="outline" asChild>
-              <Link href="/board" className="flex items-center gap-2">
-                <ClipboardList className="h-4 w-4" />
-                <span>Board</span>
-              </Link>
-            </Button>
-
-            <Button variant="outline" asChild>
-              <Link href="/intelligence" className="flex items-center gap-2">
-                <Brain className="h-4 w-4" />
-                <span>Intelligence</span>
-              </Link>
-            </Button>
-
-            <Button variant="outline" asChild>
-              <Link href="/projects" className="flex items-center gap-2">
-                <Rocket className="h-4 w-4" />
-                <span>Projects</span>
-              </Link>
-            </Button>
-
-            <Button variant="outline" asChild>
-              <a
-                href={`http://${hostname}:3016`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                <span>DBA Paper</span>
-              </a>
-            </Button>
-
-            <Button variant="outline" asChild>
-              <a
-                href={`http://${hostname}:3007`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2"
-              >
-                <CheckSquare className="h-4 w-4" />
-                <span>BAC Run</span>
-              </a>
-            </Button>
-
-            <Button variant="outline" asChild>
-              <Link href="/board" className="flex items-center gap-2">
-                <Layers className="h-4 w-4" />
-                <span>New Task</span>
-              </Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <ConfigurableQuickActions hostname={hostname} />
     </div>
   );
 }

@@ -189,6 +189,8 @@ export type Project = {
   running: boolean;
   startedAt?: number | null;
   category: 'byl' | 'tools' | 'intelligence' | 'external';
+  notes?: string;
+  autoRestart?: boolean;
 };
 
 export type ProjectsResponse = {
@@ -250,6 +252,43 @@ export async function getProjectStatus(id: string): Promise<ProjectStatus> {
 
 export function projectLogsUrl(id: string): string {
   return `${API_BASE}/api/projects/${id}/logs`;
+}
+
+export async function saveProjectNotes(id: string, notes: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/notes`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+  if (!res.ok) throw new Error(`Failed to save notes: ${res.status}`);
+}
+
+export async function setProjectAutoRestart(id: string, enabled: boolean): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/auto-restart`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error(`Failed to set auto-restart: ${res.status}`);
+}
+
+// ── Memory system ─────────────────────────────────────────────────────────────
+
+export type MemoryQueryResult = { raw: string; query: string };
+export type MemoryDecisionsResult = { raw: string };
+
+export function useMemoryQuery(q: string) {
+  return useSWR<MemoryQueryResult>(
+    q.trim() ? `/api/memory/query?q=${encodeURIComponent(q)}` : "/api/memory/query",
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+}
+
+export function useMemoryDecisions() {
+  return useSWR<MemoryDecisionsResult>("/api/memory/decisions", fetcher, {
+    revalidateOnFocus: false,
+  });
 }
 
 export type SystemHealth = {

@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import React, { useState, useEffect, useRef } from "react";
 import { mutate } from "swr";
+import { cn } from "@clawe/ui/lib/utils";
 import {
   PageHeader,
   PageHeaderRow,
@@ -19,6 +20,8 @@ import {
   stopProject, 
   getProjectStatus,
   projectLogsUrl,
+  saveProjectNotes,
+  setProjectAutoRestart,
   type Project 
 } from "@/lib/api/local";
 import { 
@@ -33,9 +36,10 @@ import {
   ChevronUp,
   Terminal,
   Search,
+  StickyNote,
+  RefreshCw,
 } from "lucide-react";
 import { Input } from "@clawe/ui/components/input";
-import { cn } from "@clawe/ui/lib/utils";
 
 type CategoryKey = 'byl' | 'tools' | 'intelligence' | 'external';
 
@@ -62,6 +66,9 @@ const ProjectsPage = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [startupLogs, setStartupLogs] = useState<Record<string, string[]>>({});
   const [logConnections, setLogConnections] = useState<Record<string, EventSource>>({});
+  const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
+  const [notesExpanded, setNotesExpanded] = useState<Record<string, boolean>>({});
+  const [togglingRestart, setTogglingRestart] = useState<string | null>(null);
 
   // Auto-clear errors after 5 seconds
   useEffect(() => {
@@ -471,6 +478,66 @@ const ProjectsPage = () => {
               </div>
             </div>
           )}
+
+          {/* Auto-restart toggle */}
+          {project.status === 'available' && (
+            <div className="flex items-center justify-between border-t pt-2">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <RefreshCw className="h-3.5 w-3.5" />
+                Auto-restart on crash
+              </div>
+              <button
+                disabled={togglingRestart === project.id}
+                onClick={async () => {
+                  setTogglingRestart(project.id);
+                  try {
+                    const newVal = !(project.autoRestart ?? false);
+                    await setProjectAutoRestart(project.id, newVal);
+                    mutate("/api/projects");
+                  } catch { /* ignore */ }
+                  setTogglingRestart(null);
+                }}
+                className={cn(
+                  "relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50",
+                  project.autoRestart ? "bg-green-600" : "bg-gray-200 dark:bg-gray-700"
+                )}
+              >
+                <span className={cn(
+                  "inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                  project.autoRestart ? "translate-x-4" : "translate-x-0"
+                )} />
+              </button>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div className="border-t pt-2">
+            <button
+              onClick={() => setNotesExpanded((p) => ({ ...p, [project.id]: !p[project.id] }))}
+              className="flex w-full items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <StickyNote className="h-3.5 w-3.5" />
+              Notes
+              {project.notes && !notesExpanded[project.id] && (
+                <span className="ml-1 truncate text-foreground/70 max-w-[200px]">{project.notes.split('\n')[0]}</span>
+              )}
+            </button>
+            {notesExpanded[project.id] && (
+              <textarea
+                className="mt-2 w-full resize-none rounded border bg-background p-2 text-xs outline-none focus:ring-1 focus:ring-ring min-h-[60px]"
+                placeholder="Deployment commands, env gotchas, reminders..."
+                value={notesDraft[project.id] ?? (project.notes || "")}
+                onChange={(e) => setNotesDraft((p) => ({ ...p, [project.id]: e.target.value }))}
+                onBlur={async () => {
+                  const val = notesDraft[project.id] ?? (project.notes || "");
+                  try {
+                    await saveProjectNotes(project.id, val);
+                    mutate("/api/projects");
+                  } catch { /* ignore */ }
+                }}
+              />
+            )}
+          </div>
         </div>
       </Card>
     );

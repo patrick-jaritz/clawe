@@ -12,6 +12,7 @@ import { ChatPanelProvider } from "@/providers/chat-panel-provider";
 import { ChatPanel } from "@dashboard/chat-panel";
 import { useRequireOnboarding } from "@/hooks/use-onboarding-guard";
 import { CommandPalette } from "@/components/command-palette";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -64,19 +65,20 @@ const DashboardLayout = ({ children, header }: DashboardLayoutProps) => {
             <DrawerProvider>
               {fullHeight ? (
                 <main
-                  className={`flex min-h-0 flex-1 flex-col overflow-hidden ${noPadding ? "" : "p-6"}`}
+                  className={`flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 ${noPadding ? "" : "p-6"}`}
                 >
                   {children}
                 </main>
               ) : (
                 <ScrollArea className="h-full min-h-0 flex-1">
-                  <main className="p-6">{children}</main>
+                  <main className="p-4 pb-20 md:p-6 md:pb-6">{children}</main>
                 </ScrollArea>
               )}
             </DrawerProvider>
           </SidebarInset>
           <ChatPanel />
           <CommandPalette />
+          <MobileBottomNav />
         </SidebarProvider>
       </ChatPanelProvider>
     </SquadProvider>

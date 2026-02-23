@@ -531,40 +531,56 @@ app.get("/api/activities", (_req, res) => {
 // GET /api/crons — list all OpenClaw cron jobs
 // ---------------------------------------------------------------------------
 
+// Memory system query endpoint
+const MEMORY_CLI = "/Users/centrick/clawd/aurel/memory-system/cli.js";
+
+app.get("/api/memory/query", (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    const cmd = q
+      ? `node "${MEMORY_CLI}" query "${q.replace(/"/g, '\\"')}" 2>/dev/null`
+      : `node "${MEMORY_CLI}" stats 2>/dev/null`;
+    const raw = execSync(cmd, { encoding: "utf8", timeout: 8000 });
+    res.json({ raw, query: q });
+  } catch (err) {
+    res.status(500).json({ error: "Memory query failed", details: String(err) });
+  }
+});
+
+app.get("/api/memory/decisions", (_req, res) => {
+  try {
+    const raw = execSync(`node "${MEMORY_CLI}" decisions 2>/dev/null`, { encoding: "utf8", timeout: 8000 });
+    res.json({ raw });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch decisions", details: String(err) });
+  }
+});
+
+app.get("/api/memory/entity/:entity", (req, res) => {
+  try {
+    const { entity } = req.params;
+    const raw = execSync(`node "${MEMORY_CLI}" entity "${entity.replace(/"/g, '\\"')}" 2>/dev/null`, { encoding: "utf8", timeout: 8000 });
+    res.json({ raw, entity });
+  } catch (err) {
+    res.status(500).json({ error: "Entity lookup failed", details: String(err) });
+  }
+});
+
 app.get("/api/crons", (_req, res) => {
   try {
-    const raw = execSync("openclaw cron list 2>/dev/null", { encoding: "utf8", timeout: 5000 });
-    const lines = raw.split("\n");
+    const raw = execSync("openclaw cron list --json 2>/dev/null", { encoding: "utf8", timeout: 5000 });
+    const data = JSON.parse(raw) as Array<Record<string, unknown>>;
 
-    // Find the data lines (skip header, empty lines, warning blocks)
-    const dataLines = lines.filter((l) => {
-      const trimmed = l.trim();
-      return (
-        trimmed.length > 0 &&
-        !trimmed.startsWith("ID ") &&
-        !trimmed.startsWith("─") &&
-        !trimmed.startsWith("│") &&
-        !trimmed.startsWith("◇") &&
-        !trimmed.startsWith("├") &&
-        !trimmed.startsWith("└")
-      );
-    });
-
-    const crons = dataLines.map((line) => {
-      // Tab-separated or space-separated columns:
-      // ID  Name  Schedule  Next  Last  Status  Target  Agent
-      const parts = line.split(/\t|\s{2,}/);
-      return {
-        id: parts[0]?.trim() ?? "",
-        name: parts[1]?.trim() ?? "",
-        schedule: parts[2]?.trim() ?? "",
-        next: parts[3]?.trim() ?? "",
-        last: parts[4]?.trim() ?? "",
-        status: parts[5]?.trim() ?? "",
-        target: parts[6]?.trim() ?? "",
-        agent: parts[7]?.trim() ?? "",
-      };
-    }).filter((c) => c.id.length > 0 && c.name.length > 0);
+    const crons = data.map((c) => ({
+      id: String(c.id ?? c.jobId ?? ""),
+      name: String(c.name ?? c.label ?? ""),
+      schedule: String(c.schedule ?? c.expression ?? ""),
+      next: String(c.next ?? c.nextRun ?? ""),
+      last: String(c.last ?? c.lastRun ?? ""),
+      status: String(c.status ?? c.state ?? ""),
+      target: String(c.target ?? c.channel ?? ""),
+      agent: String(c.agent ?? c.agentId ?? ""),
+    }));
 
     res.json({ crons, total: crons.length });
   } catch (err) {

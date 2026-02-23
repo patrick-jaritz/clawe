@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer } from "lucide-react";
+import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer, Database } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { NavMain, type NavItem } from "./nav-main";
@@ -75,6 +75,11 @@ const SidebarNavContent = () => {
       title: "Crons",
       url: "/crons",
       icon: Timer,
+    },
+    {
+      title: "Memory",
+      url: "/memory",
+      icon: Database,
     },
     {
       title: "Settings",

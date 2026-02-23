@@ -9,6 +9,7 @@ import {
   Globe,
   KeyRound,
   Plug,
+  LayoutDashboard,
 } from "lucide-react";
 import {
   SidebarGroup,
@@ -40,6 +41,11 @@ const settingsItems = [
     title: "Integrations",
     url: "/settings/integrations",
     icon: Plug,
+  },
+  {
+    title: "Dashboard",
+    url: "/settings/dashboard",
+    icon: LayoutDashboard,
   },
   {
     title: "Danger zone",

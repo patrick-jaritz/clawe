@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import { mutate } from "swr";
+import { cn } from "@clawe/ui/lib/utils";
 import { useTasks, updateTaskStatus, createNotionTask } from "@/lib/api/local";
 import type { LocalTask } from "@/lib/api/local";
 import { Bell } from "lucide-react";
@@ -80,16 +81,30 @@ const getInitialCollapsed = () => {
   return localStorage.getItem(STORAGE_KEY) === "true";
 };
 
+type AssigneeFilter = "all" | "patrick" | "aurel" | "unassigned";
+
 const BoardPage = () => {
   const { openDrawer } = useDrawer();
   const { data: tasks } = useTasks();
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilter>("all");
   const [isCollapsed, setIsCollapsed] = useState(getInitialCollapsed);
 
-  // Filter tasks by selected agents
+  // Filter tasks by selected agents AND assignee quick-filter
   const filteredTasks = tasks?.filter((task) => {
-    if (selectedAgentIds.length === 0) return true;
-    return task.assignees?.some((a) => selectedAgentIds.includes(a._id));
+    // Agent panel filter (desktop)
+    if (selectedAgentIds.length > 0 && !task.assignees?.some((a) => selectedAgentIds.includes(a._id))) {
+      return false;
+    }
+    // Quick assignee filter
+    if (assigneeFilter === "unassigned") return !task.assignees?.length;
+    if (assigneeFilter === "patrick") {
+      return task.assignees?.some((a) => a.name?.toLowerCase().includes("patrick"));
+    }
+    if (assigneeFilter === "aurel") {
+      return task.assignees?.some((a) => a.name?.toLowerCase().includes("aurel"));
+    }
+    return true;
   });
 
   // Group tasks by status
@@ -199,10 +214,32 @@ const BoardPage = () => {
                 <NewTaskDialog />
                 <Button variant="outline" size="sm" onClick={handleOpenFeed}>
                   <Bell className="h-4 w-4" />
-                  Live Feed
+                  <span className="hidden sm:inline">Live Feed</span>
                 </Button>
               </PageHeaderActions>
             </PageHeaderRow>
+            {/* Assignee quick-filter */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-2">
+              {(["all", "patrick", "aurel", "unassigned"] as AssigneeFilter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setAssigneeFilter(f)}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                    assigneeFilter === f
+                      ? "bg-foreground text-background"
+                      : "border bg-background text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {f === "all" ? "All" : f === "patrick" ? "👤 Patrick" : f === "aurel" ? "🤖 Aurel" : "Unassigned"}
+                </button>
+              ))}
+              {assigneeFilter !== "all" && (
+                <span className="text-xs text-muted-foreground">
+                  · {filteredTasks?.length ?? 0} tasks
+                </span>
+              )}
+            </div>
           </PageHeader>
 
           <div className="min-h-0 flex-1 overflow-hidden pt-6">

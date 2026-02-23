@@ -19,6 +19,70 @@ const startTimes = new Map<string, number>(); // epoch ms
 const logBuffers = new Map<string, string[]>();
 const logEmitters = new Map<string, EventEmitter>();
 
+// ---------------------------------------------------------------------------
+// Project notes — saved to ~/.clawe/project-notes.json
+// ---------------------------------------------------------------------------
+const NOTES_PATH = path.join(process.env.HOME ?? "/Users/centrick", ".clawe", "project-notes.json");
+let projectNotes: Record<string, string> = {};
+
+function loadNotes() {
+  try {
+    if (fs.existsSync(NOTES_PATH)) {
+      projectNotes = JSON.parse(fs.readFileSync(NOTES_PATH, "utf8"));
+    }
+  } catch { /* silent */ }
+}
+
+function saveNotes() {
+  try {
+    const dir = path.dirname(NOTES_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(NOTES_PATH, JSON.stringify(projectNotes, null, 2));
+  } catch (err) {
+    console.warn("[projects] Failed to save notes:", err);
+  }
+}
+
+loadNotes();
+
+// ---------------------------------------------------------------------------
+// Auto-restart settings — saved to ~/.clawe/auto-restart.json
+// ---------------------------------------------------------------------------
+const AUTO_RESTART_PATH = path.join(process.env.HOME ?? "/Users/centrick", ".clawe", "auto-restart.json");
+let autoRestartSettings: Record<string, boolean> = {};
+
+function loadAutoRestart() {
+  try {
+    if (fs.existsSync(AUTO_RESTART_PATH)) {
+      autoRestartSettings = JSON.parse(fs.readFileSync(AUTO_RESTART_PATH, "utf8"));
+    }
+  } catch { /* silent */ }
+}
+
+function saveAutoRestart() {
+  try {
+    const dir = path.dirname(AUTO_RESTART_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(AUTO_RESTART_PATH, JSON.stringify(autoRestartSettings, null, 2));
+  } catch (err) {
+    console.warn("[projects] Failed to save auto-restart settings:", err);
+  }
+}
+
+loadAutoRestart();
+
+// Restart a project after a delay
+function scheduleRestart(id: string, delayMs = 5000) {
+  const project = PROJECTS.find((p) => p.id === id);
+  if (!project) return;
+  console.log(`[projects] Auto-restart scheduled for ${id} in ${delayMs}ms`);
+  setTimeout(() => {
+    if (autoRestartSettings[id] && !runningProcesses.has(id)) {
+      spawnProject(id, project);
+    }
+  }, delayMs);
+}
+
 /** Check if a port is in use by ANY process (not just ours) */
 function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -128,6 +192,52 @@ function addLogLine(id: string, line: string) {
 }
 
 /**
+ * Shared project spawn — used by start endpoint and auto-restart
+ */
+interface ProjectConfig {
+  id: string;
+  path: string;
+  startCmd: string;
+  port: number;
+}
+
+function spawnProject(id: string, project: ProjectConfig): void {
+  logBuffers.set(id, []);
+  const child = spawn('/bin/bash', ['-c', project.startCmd], {
+    cwd: project.path,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PATH: SPAWN_PATH, PORT: project.port.toString() },
+  });
+
+  runningProcesses.set(id, child.pid!);
+  startTimes.set(id, Date.now());
+  persistState();
+
+  child.stdout?.on('data', (data: Buffer) => {
+    for (const line of data.toString().split('\n').filter((l: string) => l.trim())) {
+      addLogLine(id, line);
+    }
+  });
+  child.stderr?.on('data', (data: Buffer) => {
+    for (const line of data.toString().split('\n').filter((l: string) => l.trim())) {
+      addLogLine(id, `[ERROR] ${line}`);
+    }
+  });
+  child.on('exit', (code) => {
+    addLogLine(id, `Process exited with code ${code}`);
+    runningProcesses.delete(id);
+    startTimes.delete(id);
+    persistState();
+    if (code !== 0 && autoRestartSettings[id]) {
+      addLogLine(id, `Auto-restart enabled — restarting in 5s...`);
+      scheduleRestart(id);
+    }
+  });
+  child.unref();
+}
+
+/**
  * GET /api/projects
  * Returns all projects with their live running status
  */
@@ -143,6 +253,8 @@ router.get("/", async (_req, res) => {
           ...project,
           running,
           startedAt: running ? (startTimes.get(project.id) ?? null) : null,
+          notes: projectNotes[project.id] ?? "",
+          autoRestart: autoRestartSettings[project.id] ?? false,
         };
       })
     );
@@ -264,57 +376,12 @@ router.post("/:id/start", async (req, res) => {
       return;
     }
 
-    // Clear old logs
-    logBuffers.set(id, []);
-
-    // Spawn process with piped stdio
-    const child = spawn('/bin/bash', ['-c', project.startCmd], {
-      cwd: project.path,
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        PATH: SPAWN_PATH,
-        PORT: project.port.toString(),
-      },
-    });
-
-    // Store PID + start time, persist to disk
-    runningProcesses.set(id, child.pid!);
-    startTimes.set(id, Date.now());
-    persistState();
-
-    // Pipe stdout to logs
-    child.stdout?.on('data', (data) => {
-      const lines = data.toString().split('\n').filter((l: string) => l.trim());
-      for (const line of lines) {
-        addLogLine(id, line);
-      }
-    });
-
-    // Pipe stderr to logs
-    child.stderr?.on('data', (data) => {
-      const lines = data.toString().split('\n').filter((l: string) => l.trim());
-      for (const line of lines) {
-        addLogLine(id, `[ERROR] ${line}`);
-      }
-    });
-
-    // Handle process exit
-    child.on('exit', (code) => {
-      addLogLine(id, `Process exited with code ${code}`);
-      runningProcesses.delete(id);
-      startTimes.delete(id);
-      persistState();
-    });
-
-    // Detach so it keeps running
-    child.unref();
+    spawnProject(id, project);
 
     res.json({ 
       started: true, 
       port: project.port,
-      pid: child.pid,
+      pid: runningProcesses.get(id),
     });
   } catch (err) {
     console.error("Error starting project:", err);
@@ -353,6 +420,54 @@ router.post("/:id/stop", (req, res) => {
     console.error("Error stopping project:", err);
     res.status(500).json({ error: "Failed to stop project" });
   }
+});
+
+/**
+ * GET /api/projects/:id/notes
+ */
+router.get("/:id/notes", (req, res) => {
+  const { id } = req.params;
+  res.json({ notes: projectNotes[id] ?? "" });
+});
+
+/**
+ * PATCH /api/projects/:id/notes
+ * Body: { notes: string }
+ */
+router.patch("/:id/notes", (req, res) => {
+  const { id } = req.params;
+  const { notes } = req.body as { notes: string };
+  if (typeof notes !== "string") {
+    res.status(400).json({ error: "notes must be a string" });
+    return;
+  }
+  if (notes.trim() === "") {
+    delete projectNotes[id];
+  } else {
+    projectNotes[id] = notes;
+  }
+  saveNotes();
+  res.json({ saved: true });
+});
+
+/**
+ * PATCH /api/projects/:id/auto-restart
+ * Body: { enabled: boolean }
+ */
+router.patch("/:id/auto-restart", (req, res) => {
+  const { id } = req.params;
+  const { enabled } = req.body as { enabled: boolean };
+  if (typeof enabled !== "boolean") {
+    res.status(400).json({ error: "enabled must be a boolean" });
+    return;
+  }
+  if (!enabled) {
+    delete autoRestartSettings[id];
+  } else {
+    autoRestartSettings[id] = true;
+  }
+  saveAutoRestart();
+  res.json({ autoRestart: enabled });
 });
 
 export default router;
