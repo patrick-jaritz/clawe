@@ -125,11 +125,14 @@ export async function intelListAll(
   // Count total with filter
   let total: number;
   if (filter) {
-    const filteredResults = await table
-      .filter(filter)
-      .toArrow()
-      .then((t) => t.numRows);
-    total = filteredResults;
+    // countRows accepts an optional SQL WHERE expression in v0.22+
+    try {
+      total = await (table as unknown as { countRows(w?: string): Promise<number> }).countRows(filter);
+    } catch {
+      // Fallback: fetch all and count
+      const all = await table.query().where(filter).toArray();
+      total = all.length;
+    }
   } else {
     total = await table.countRows();
   }
@@ -138,7 +141,7 @@ export async function intelListAll(
   const offset = (page - 1) * limit;
   let query = table.query();
   if (filter) {
-    query = query.filter(filter);
+    query = query.where(filter);
   }
 
   const results = await query.limit(limit).offset(offset).toArray();

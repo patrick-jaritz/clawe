@@ -240,15 +240,36 @@ app.get("/api/system/recent-intel", async (_req, res) => {
 // ---------------------------------------------------------------------------
 
 app.get("/api/agents", (_req, res) => {
-  const aurelData = readJsonFile(
-    path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"),
-  );
-  const sorenData = readJsonFile(
-    path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
-  );
+  const home = process.env.HOME ?? "/Users/centrick";
+  const aurelData = readJsonFile(path.join(home, "clawd/aurel/status/aurel.json"));
+  const sorenData = readJsonFile(path.join(home, "clawd/coordination/status/soren.json"));
 
   const aurelHeartbeat = resolveHeartbeat(aurelData);
   const sorenHeartbeat = resolveHeartbeat(sorenData);
+
+  // Pull session data from sessions.json for rich info
+  let sessionsMap: Record<string, Record<string, unknown>> = {};
+  try {
+    const sessPath = path.join(home, ".openclaw/agents/main/sessions/sessions.json");
+    if (fs.existsSync(sessPath)) {
+      sessionsMap = JSON.parse(fs.readFileSync(sessPath, "utf8")) as Record<string, Record<string, unknown>>;
+    }
+  } catch { /* ignore */ }
+
+  function getSession(key: string) {
+    const s = sessionsMap[key];
+    if (!s) return null;
+    const rawModel = (s.model as string) ?? "unknown";
+    const model = rawModel.includes("/") ? rawModel.split("/").pop()! : rawModel;
+    return {
+      model,
+      contextTokens: (s.contextTokens as number) ?? 0,
+      inputTokens: (s.inputTokens as number) ?? 0,
+      outputTokens: (s.outputTokens as number) ?? 0,
+      totalTokens: (s.totalTokens as number) ?? 0,
+      updatedAt: (s.updatedAt as number) ?? 0,
+    };
+  }
 
   const agents = [
     {
@@ -258,11 +279,14 @@ app.get("/api/agents", (_req, res) => {
       emoji: "🏛️",
       sessionKey: "agent:main:main",
       status: aurelData ? deriveStatus(aurelData.health, aurelHeartbeat) : "offline",
-      currentActivity:
-        (aurelData?.active_tasks as unknown[])?.[0] !== undefined
-          ? String((aurelData!.active_tasks as unknown[])[0])
-          : null,
+      health: (aurelData?.health as string) ?? "unknown",
+      currentActivity: (aurelData?.active_tasks as unknown[])?.[0] !== undefined
+        ? String((aurelData!.active_tasks as unknown[])[0]) : null,
+      blockers: (aurelData?.blockers as string[]) ?? [],
+      needsAttention: (aurelData?.needs_attention as string[]) ?? [],
+      completedToday: (aurelData?.completed_today as string[]) ?? [],
       lastHeartbeat: aurelHeartbeat ?? null,
+      session: getSession("agent:main:main"),
     },
     {
       _id: "soren",
@@ -271,11 +295,14 @@ app.get("/api/agents", (_req, res) => {
       emoji: "🧠",
       sessionKey: "agent:soren:main",
       status: sorenData ? deriveStatus(sorenData.health, sorenHeartbeat) : "offline",
-      currentActivity:
-        (sorenData?.active_tasks as unknown[])?.[0] !== undefined
-          ? String((sorenData!.active_tasks as unknown[])[0])
-          : null,
+      health: (sorenData?.health as string) ?? "unknown",
+      currentActivity: (sorenData?.active_tasks as unknown[])?.[0] !== undefined
+        ? String((sorenData!.active_tasks as unknown[])[0]) : null,
+      blockers: (sorenData?.blockers as string[]) ?? [],
+      needsAttention: (sorenData?.needs_attention as string[]) ?? [],
+      completedToday: (sorenData?.completed_today as string[]) ?? [],
       lastHeartbeat: sorenHeartbeat ?? null,
+      session: getSession("agent:soren:main"),
     },
   ];
 

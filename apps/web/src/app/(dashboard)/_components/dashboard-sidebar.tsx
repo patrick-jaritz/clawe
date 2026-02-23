@@ -47,7 +47,7 @@ const SidebarNavContent = () => {
   const navItems: NavItem[] = [
     {
       title: "Home",
-      url: "/",
+      url: "/agents",
       icon: Home,
     },
     {
