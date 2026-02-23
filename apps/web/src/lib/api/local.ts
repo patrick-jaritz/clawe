@@ -295,13 +295,18 @@ export function useRecentIntel() {
 // ---------------------------------------------------------------------------
 
 export type WatchlistRepo = {
+  id: string;
   owner: string;
   repo: string;
+  name: string;
   category: string;
   description: string;
   why: string;
   added: string;
-  path?: string;
+  url: string;
+  stars: number | null;
+  trending: boolean;
+  source: string;
 };
 
 export type RepoCategory = {
@@ -312,8 +317,9 @@ export type RepoCategory = {
 export type ReposResponse = {
   repos: WatchlistRepo[];
   categories: RepoCategory[];
-  meta: { description: string; lastChecked: string; createdAt: string; sources: string[] } | null;
+  meta: { lastChecked: string } | null;
   total: number;
+  source: "notion" | "local";
 };
 
 export function useRepos(category?: string, search?: string) {

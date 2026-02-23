@@ -715,53 +715,101 @@ app.patch("/api/tasks/:id/status", express.json(), async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/repos  (watchlist repos from github-repos.json + resources.md)
+// GET /api/repos  (watchlist — Notion DB primary, local JSON fallback)
 // ---------------------------------------------------------------------------
 
+const WATCHLIST_NOTION_DB = "304ec8c982bb8087b0c1fd25895a99a5";
+
 interface WatchlistRepo {
+  id: string;
   owner: string;
   repo: string;
+  name: string;
   category: string;
   description: string;
   why: string;
   added: string;
-  path?: string;
+  url: string;
+  stars: number | null;
+  trending: boolean;
+  source: string;
 }
 
-interface WatchlistData {
-  meta: { description: string; lastChecked: string; createdAt: string; sources: string[] };
-  repos: WatchlistRepo[];
+// Paginate all results from Notion DB
+async function fetchNotionRepos(notionKey: string): Promise<WatchlistRepo[]> {
+  const repos: WatchlistRepo[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const body: Record<string, unknown> = { page_size: 100 };
+    if (cursor) body.start_cursor = cursor;
+
+    const result = (await notionRequest(
+      `/v1/databases/${WATCHLIST_NOTION_DB}/query`,
+      notionKey,
+      body,
+    )) as { results: unknown[]; has_more: boolean; next_cursor: string | null };
+
+    for (const page of result.results) {
+      const p = page as Record<string, unknown>;
+      const props = p.properties as Record<string, Record<string, unknown>>;
+      const id = p.id as string;
+
+      const getText = (key: string) => {
+        const prop = props[key];
+        if (!prop) return "";
+        if (prop.type === "title") return ((prop.title as unknown[]) ?? []).map((t: unknown) => (t as Record<string, unknown>).plain_text ?? "").join("").trim();
+        if (prop.type === "rich_text") return ((prop.rich_text as unknown[]) ?? []).map((t: unknown) => (t as Record<string, unknown>).plain_text ?? "").join("").trim();
+        if (prop.type === "url") return (prop.url as string) ?? "";
+        if (prop.type === "select") return ((prop.select as Record<string, string> | null)?.name) ?? "";
+        return "";
+      };
+
+      const name = getText("Name");
+      const repo = getText("Repo") || name;
+      const owner = getText("Owner");
+      const category = getText("Category") || "Uncategorized";
+      const description = getText("Description");
+      const why = getText("Why Track");
+      const url = getText("URL") || (owner && repo ? `https://github.com/${owner}/${repo}` : "");
+      const stars = (props.Stars?.number as number | null) ?? null;
+      const trending = (props.Trending?.checkbox as boolean) ?? false;
+      const source = getText("Source") || "manual";
+      const added = (props.Added?.date as Record<string, string> | null)?.start?.slice(0, 10) ?? "";
+
+      repos.push({ id, name, owner, repo, category, description, why, added, url, stars, trending, source });
+    }
+
+    cursor = result.has_more && result.next_cursor ? result.next_cursor : undefined;
+  } while (cursor);
+
+  return repos;
 }
 
-const WATCHLIST_DIR = path.join(
-  process.env.HOME ?? "/Users/centrick",
-  "clawd/workspace/watchlist",
-);
+// Simple in-memory cache (5 min TTL)
+let reposCache: { repos: WatchlistRepo[]; ts: number } | null = null;
 
-// Also check Patrick's workspace path
-const WATCHLIST_DIR_ALT = "/Users/patrickjaritz/.openclaw/workspace/watchlist";
-
-function getWatchlistDir(): string {
-  if (fs.existsSync(path.join(WATCHLIST_DIR, "github-repos.json"))) return WATCHLIST_DIR;
-  if (fs.existsSync(path.join(WATCHLIST_DIR_ALT, "github-repos.json"))) return WATCHLIST_DIR_ALT;
-  return WATCHLIST_DIR;
-}
-
-app.get("/api/repos", (req, res) => {
-  const dir = getWatchlistDir();
-  const reposPath = path.join(dir, "github-repos.json");
-
-  if (!fs.existsSync(reposPath)) {
-    return res.json({ repos: [], categories: [], meta: null });
-  }
+app.get("/api/repos", async (req, res) => {
+  const notionKey = getNotionKey();
+  const categoryFilter = req.query.category as string | undefined;
+  const search = (req.query.q as string | undefined)?.toLowerCase();
 
   try {
-    const data: WatchlistData = JSON.parse(fs.readFileSync(reposPath, "utf8"));
-    const categoryFilter = req.query.category as string | undefined;
-    const search = (req.query.q as string | undefined)?.toLowerCase();
+    let allRepos: WatchlistRepo[] = [];
 
-    let repos = data.repos;
+    // Try Notion first
+    if (notionKey) {
+      const now = Date.now();
+      if (reposCache && now - reposCache.ts < 5 * 60 * 1000) {
+        allRepos = reposCache.repos;
+      } else {
+        allRepos = await fetchNotionRepos(notionKey);
+        reposCache = { repos: allRepos, ts: now };
+      }
+    }
 
+    // Filter
+    let repos = allRepos;
     if (categoryFilter && categoryFilter !== "all") {
       repos = repos.filter((r) => r.category === categoryFilter);
     }
@@ -770,27 +818,46 @@ app.get("/api/repos", (req, res) => {
         (r) =>
           r.repo.toLowerCase().includes(search) ||
           r.owner.toLowerCase().includes(search) ||
+          r.name.toLowerCase().includes(search) ||
           r.description.toLowerCase().includes(search) ||
           r.why.toLowerCase().includes(search) ||
           r.category.toLowerCase().includes(search),
       );
     }
 
-    // Extract unique categories with counts
+    // Sort: trending first, then by stars desc
+    repos = repos.sort((a, b) => {
+      if (a.trending && !b.trending) return -1;
+      if (!a.trending && b.trending) return 1;
+      return (b.stars ?? 0) - (a.stars ?? 0);
+    });
+
+    // Categories with counts (from full set)
     const catMap = new Map<string, number>();
-    for (const r of data.repos) {
-      catMap.set(r.category, (catMap.get(r.category) ?? 0) + 1);
-    }
+    for (const r of allRepos) catMap.set(r.category, (catMap.get(r.category) ?? 0) + 1);
     const categories = Array.from(catMap.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
-    res.json({ repos, categories, meta: data.meta, total: data.repos.length });
+    res.json({
+      repos,
+      categories,
+      total: allRepos.length,
+      source: notionKey ? "notion" : "local",
+      meta: { lastChecked: new Date().toISOString().slice(0, 10) },
+    });
   } catch (err) {
     console.error("Repos read error:", err);
     res.status(500).json({ error: "Failed to read repos" });
   }
 });
+
+function getWatchlistDir(): string {
+  const primary = path.join(process.env.HOME ?? "/Users/centrick", "clawd/workspace/watchlist");
+  const fallback = "/Users/patrickjaritz/.openclaw/workspace/watchlist";
+  if (fs.existsSync(path.join(primary, "resources.md"))) return primary;
+  return fallback;
+}
 
 app.get("/api/repos/resources", (_req, res) => {
   const dir = getWatchlistDir();

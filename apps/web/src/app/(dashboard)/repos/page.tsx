@@ -85,21 +85,30 @@ function getCategoryColor(category: string): string {
   return map[category] ?? "bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-300";
 }
 
+function formatStars(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+  return String(n);
+}
+
 function RepoCard({ repo }: { repo: WatchlistRepo }) {
-  const ghUrl = `https://github.com/${repo.owner}/${repo.repo}`;
+  const url = repo.url || `https://github.com/${repo.owner}/${repo.repo}`;
+  const label = repo.owner && repo.repo ? `${repo.owner}/${repo.repo}` : repo.name;
   return (
     <a
-      href={ghUrl}
+      href={url}
       target="_blank"
       rel="noopener noreferrer"
       className="group block rounded-lg border bg-card p-4 transition-all hover:border-primary/40 hover:shadow-md"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-sm">{getEmoji(repo.category)}</span>
+            {repo.trending && (
+              <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wide">🔥 trending</span>
+            )}
             <h3 className="truncate font-semibold text-sm group-hover:text-primary">
-              {repo.owner}/<span className="font-bold">{repo.repo}</span>
+              {label}
             </h3>
           </div>
           <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2">
@@ -108,11 +117,21 @@ function RepoCard({ repo }: { repo: WatchlistRepo }) {
         </div>
         <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
         <Badge variant="secondary" className={cn("text-[10px] px-1.5 py-0", getCategoryColor(repo.category))}>
           {repo.category}
         </Badge>
-        <span className="text-[10px] text-muted-foreground">{repo.added}</span>
+        <div className="flex items-center gap-2 ml-auto">
+          {repo.stars != null && (
+            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+              <Star className="h-2.5 w-2.5" />
+              {formatStars(repo.stars)}
+            </span>
+          )}
+          {repo.added && (
+            <span className="text-[10px] text-muted-foreground">{repo.added}</span>
+          )}
+        </div>
       </div>
       {repo.why && (
         <p className="mt-2 text-[11px] text-muted-foreground/80 italic">
@@ -124,10 +143,11 @@ function RepoCard({ repo }: { repo: WatchlistRepo }) {
 }
 
 function RepoRow({ repo }: { repo: WatchlistRepo }) {
-  const ghUrl = `https://github.com/${repo.owner}/${repo.repo}`;
+  const url = repo.url || `https://github.com/${repo.owner}/${repo.repo}`;
+  const label = repo.owner && repo.repo ? `${repo.owner}/${repo.repo}` : repo.name;
   return (
     <a
-      href={ghUrl}
+      href={url}
       target="_blank"
       rel="noopener noreferrer"
       className="group flex items-center gap-3 rounded-md border-b px-3 py-2.5 transition-colors hover:bg-muted/50 last:border-0"
@@ -135,8 +155,9 @@ function RepoRow({ repo }: { repo: WatchlistRepo }) {
       <span className="text-sm">{getEmoji(repo.category)}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium group-hover:text-primary">
-            {repo.owner}/<span className="font-semibold">{repo.repo}</span>
+          {repo.trending && <span className="text-orange-500 text-xs">🔥</span>}
+          <span className="text-sm font-medium group-hover:text-primary truncate">
+            {label}
           </span>
           <Badge variant="secondary" className={cn("text-[10px] px-1.5 py-0 shrink-0", getCategoryColor(repo.category))}>
             {repo.category}
@@ -146,6 +167,11 @@ function RepoRow({ repo }: { repo: WatchlistRepo }) {
           {repo.description}
         </p>
       </div>
+      {repo.stars != null && (
+        <span className="shrink-0 flex items-center gap-0.5 text-[10px] text-muted-foreground">
+          <Star className="h-2.5 w-2.5" />{formatStars(repo.stars)}
+        </span>
+      )}
       <span className="shrink-0 text-[10px] text-muted-foreground">{repo.added}</span>
       <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
     </a>
@@ -167,6 +193,8 @@ export default function ReposPage() {
   const categories = data?.categories ?? [];
   const total = data?.total ?? 0;
   const meta = data?.meta;
+  const source = data?.source;
+  const trendingCount = (data?.repos ?? []).filter((r) => r.trending).length;
 
   // Group repos by category for grid view
   const groupedRepos = useMemo(() => {
@@ -184,10 +212,15 @@ export default function ReposPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Watchlist</h1>
-        <p className="text-muted-foreground">
-          {total} repos tracked across {categories.length} categories
+        <p className="text-muted-foreground flex items-center gap-2 flex-wrap">
+          <span>{total} repos · {categories.length} categories</span>
+          {source === "notion" && (
+            <span className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 px-1.5 py-0.5 rounded font-medium">
+              Notion live
+            </span>
+          )}
           {meta?.lastChecked && (
-            <span className="ml-1">· Last checked {meta.lastChecked}</span>
+            <span className="text-xs">· {meta.lastChecked}</span>
           )}
         </p>
       </div>
@@ -231,14 +264,12 @@ export default function ReposPage() {
         </Card>
         <Card>
           <CardContent className="flex items-center gap-3 pt-5 pb-4">
-            <div className="rounded-lg bg-green-500/10 p-2">
-              <GitFork className="h-4 w-4 text-green-600" />
+            <div className="rounded-lg bg-orange-500/10 p-2">
+              <GitFork className="h-4 w-4 text-orange-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">
-                {meta?.sources?.length ?? 0}
-              </p>
-              <p className="text-xs text-muted-foreground">Sources</p>
+              <p className="text-2xl font-bold">{trendingCount}</p>
+              <p className="text-xs text-muted-foreground">Trending 🔥</p>
             </div>
           </CardContent>
         </Card>
