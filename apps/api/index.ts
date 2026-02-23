@@ -468,17 +468,6 @@ app.get("/api/tasks", async (_req, res) => {
         }
       }
 
-      // Extract priority
-      const priorityProp = props.Priority ?? props.priority;
-      const priorityName = (
-        (priorityProp as Record<string, unknown>)?.select as Record<string, unknown> | undefined
-      )?.name?.toString().toLowerCase() ?? "";
-      const priority: "low" | "medium" | "high" =
-        priorityName.includes("high") ? "high"
-        : priorityName.includes("medium") ? "medium"
-        : priorityName.includes("low") ? "low"
-        : "low";
-
       // Extract due date
       const dueProp = props["Due date"] ?? props["Due"] ?? props.due_date ?? props.Date;
       const dueDate = (
@@ -1863,6 +1852,9 @@ app.get("/api/sessions", (_req, res) => {
   } catch (err) {
     console.error("Sessions error:", err);
     res.status(500).json({ error: "Failed to read sessions" });
+  }
+});
+
 // POST /api/agents/:id/heartbeat
 // ---------------------------------------------------------------------------
 
@@ -2058,6 +2050,8 @@ app.get("/api/agents/:id/profile", (req, res) => {
   const status = readJsonFile(statusPath);
 
   res.json({ id: req.params.id, name: profile.name, emoji: profile.emoji, identity, soul, status });
+});
+
 // GET /api/coordination/feed
 // ---------------------------------------------------------------------------
 
