@@ -159,6 +159,7 @@ export default function SessionsPage() {
           <thead>
             <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
               <th className="px-3 py-2 text-left font-medium w-8"></th>
+              <th className="px-3 py-2 text-left font-medium w-20">Owner</th>
               <th className="px-3 py-2 text-left font-medium w-24">Kind</th>
               <th className="px-3 py-2 text-left font-medium">Session</th>
               <th className="px-3 py-2 text-left font-medium w-44">Model</th>
@@ -181,6 +182,9 @@ export default function SessionsPage() {
                       title={active ? "Active (updated < 30 min ago)" : "Ceased / idle"}
                     />
                   </td>
+                  <td className="px-3 py-2">
+                    <OwnerBadge owner={owner} size="sm" />
+                  </td>
                   <td className="px-3 py-2"><KindBadge kind={s.kind} /></td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col gap-0.5">
@@ -201,10 +205,7 @@ export default function SessionsPage() {
                       ) : (
                         <span className="font-mono text-xs">{s.label}</span>
                       )}
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <OwnerBadge owner={owner} />
-                        {s.origin && <span className="text-xs text-muted-foreground truncate max-w-xs">{s.origin}</span>}
-                      </div>
+                      {s.origin && <span className="text-xs text-muted-foreground truncate max-w-xs mt-0.5 block">{s.origin}</span>}
                     </div>
                   </td>
                   <td className="px-3 py-2">

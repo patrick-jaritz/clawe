@@ -7,8 +7,10 @@ const CLAWE_API = process.env.CLAWE_API_URL ?? "http://localhost:3001";
 
 /**
  * POST /api/chat
- * Proxies to CLAWE API /api/chat which runs a CLAWE-aware Anthropic stream.
- * Falls back to a helpful error if CLAWE API is unreachable.
+ *
+ * Proxies to CLAWE API /api/chat (SSE: `data: {"delta":"..."}`)
+ * and re-emits as a plain UTF-8 byte stream — exactly what use-chat.ts
+ * expects (it does raw accumulated += decoder.decode(chunk)).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -29,15 +31,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (!upstream.ok || !upstream.body) {
-      const err = await upstream.text();
-      return new Response(JSON.stringify({ error: `CLAWE API error: ${err}` }), {
-        status: upstream.status,
-        headers: { "Content-Type": "application/json" },
-      });
+      const errText = await upstream.text();
+      return new Response(
+        `[CLAWE API error ${upstream.status}]: ${errText}`,
+        { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } },
+      );
     }
 
-    // Stream SSE through from CLAWE API to the browser
-    // Convert CLAWE's SSE format (data: {"delta":"..."}) to Vercel AI SDK format
+    // Transform: CLAWE SSE  →  plain text byte stream
     const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
@@ -45,33 +46,30 @@ export async function POST(request: NextRequest) {
     (async () => {
       const reader = upstream.body!.getReader();
       const decoder = new TextDecoder();
-      let buf = "";
+      let lineBuf = "";
 
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split("\n");
-          buf = lines.pop() ?? "";
+
+          lineBuf += decoder.decode(value, { stream: true });
+          const lines = lineBuf.split("\n");
+          lineBuf = lines.pop() ?? "";
 
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
-            const payload = line.slice(6);
-            if (payload === "[DONE]") {
-              // Vercel AI SDK expects a specific finish format
-              await writer.write(encoder.encode('0:""\n'));
-              continue;
-            }
+            const payload = line.slice(6).trim();
+            if (payload === "[DONE]") continue;
             try {
               const parsed = JSON.parse(payload) as { delta?: string; error?: string };
               if (parsed.error) {
-                await writer.write(encoder.encode(`3:${JSON.stringify(parsed.error)}\n`));
+                await writer.write(encoder.encode(`\n[Error: ${parsed.error}]`));
               } else if (parsed.delta) {
-                // Vercel AI SDK text stream format: 0:"<escaped text>"\n
-                await writer.write(encoder.encode(`0:${JSON.stringify(parsed.delta)}\n`));
+                // Write the raw text — the hook appends it directly
+                await writer.write(encoder.encode(parsed.delta));
               }
-            } catch { /* skip malformed */ }
+            } catch { /* skip malformed lines */ }
           }
         }
       } finally {
@@ -82,15 +80,15 @@ export async function POST(request: NextRequest) {
     return new Response(readable, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "X-Vercel-AI-Data-Stream": "v1",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
       },
     });
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
+    // Return error as plain text so the hook shows it inline
+    return new Response(`[Chat error: ${String(e)}]`, {
+      status: 200,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   }
 }

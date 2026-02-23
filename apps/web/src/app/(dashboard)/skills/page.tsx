@@ -114,13 +114,15 @@ const SkillsPage = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredSkills.map((skill) => (
               <Card key={skill.id} className="p-4 flex flex-col">
-                <div className="text-3xl mb-2">{skill.emoji}</div>
+                <div className="flex items-start justify-between mb-2">
+                  <span className="text-3xl">{skill.emoji}</span>
+                  <OwnerBadge owner={getSkillOwner(skill.id, skill.name)} size="sm" />
+                </div>
                 <h3 className="font-semibold text-sm mb-1">{skill.name}</h3>
                 <p className="text-xs text-muted-foreground line-clamp-3 flex-1 mt-1">
                   {skill.description || "No description available."}
                 </p>
                 <div className="flex flex-wrap gap-1.5 mt-3">
-                  <OwnerBadge owner={getSkillOwner(skill.id, skill.name)} size="sm" />
                   {skill.installed && (
                     <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
                       Installed
