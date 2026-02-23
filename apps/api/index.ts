@@ -1424,13 +1424,14 @@ async function buildFleetStatus(): Promise<FleetStatus> {
     .map(c => ({ id: c.id, name: `🏛️ ${c.name}`, last: c.last }));
 
   // Søren's crons from coordination status
-  let sorenCronOk = 0, sorenCronErrors = 0;
+  let sorenCronOk = 0, sorenCronErrors = 0, sorenCronTotal = 0;
   const sorenRecentErrors: Array<{ id: string; name: string; last: string }> = [];
   try {
     const sorenStatusForCrons = readJsonFile(
       path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
     );
     const sorenCrons = (sorenStatusForCrons?.crons as Array<Record<string, unknown>> | undefined) ?? [];
+    sorenCronTotal = sorenCrons.length;
     sorenCronOk = sorenCrons.filter(c => c.status === "ok" || c.status === "").length;
     sorenCronErrors = sorenCrons.filter(c => c.status === "error").length;
     sorenCrons
@@ -1537,10 +1538,14 @@ async function buildFleetStatus(): Promise<FleetStatus> {
   return {
     overall,
     updatedAt: Date.now(),
-    crons: { total: cronCache.total, ok: cronOk, errors: cronErrors, recentErrors },
+    crons: { total: cronCache.crons.length + sorenCronTotal, ok: cronOk, errors: cronErrors, recentErrors },
     agents: { total: agentItems.length, online: agentsOnline, items: agentItems },
     gateway: { running: gatewayRunning, mode: gatewayMode, port: gatewayPort, warnings: gatewayWarnings },
-    memory: { facts: memFacts, decisions: memDecisions, checkpoints: memCheckpoints },
+    memory: {
+      facts: memFacts,
+      decisions: memDecisions + ((readJsonFile(path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"))?.decisions as unknown[] | undefined)?.length ?? 0),
+      checkpoints: memCheckpoints,
+    },
     services: { api: true, qdrant: qdrantOk, lancedb: lanceDbOk, chunks: 0 },
     connectivity,
   };
