@@ -678,3 +678,23 @@ export interface FleetStatus {
 export function useFleetStatus() {
   return useSWR<FleetStatus>("/api/fleet/status", fetcher, { refreshInterval: 3 * 60 * 1000 });
 }
+
+// Sessions
+export interface SessionItem {
+  key: string; label: string; kind: "direct" | "group" | "cron" | "subagent";
+  model: string; modelProvider: string; updatedAt: number; ageLabel: string;
+  contextTokens: number; totalTokens: number; inputTokens: number; outputTokens: number;
+  aborted: boolean; origin: string;
+}
+export interface SessionsData { total: number; sessions: SessionItem[]; modelSummary: Record<string, number> }
+
+export function useSessions() {
+  return useSWR<SessionsData>("/api/sessions", fetcher, { refreshInterval: 30_000 });
+}
+
+// Agent profile
+export interface AgentProfile { id: string; name: string; emoji: string; identity: string | null; soul: string | null; status: Record<string, unknown> | null }
+
+export function useAgentProfile(id: string | null) {
+  return useSWR<AgentProfile>(id ? `/api/agents/${id}/profile` : null, fetcher);
+}

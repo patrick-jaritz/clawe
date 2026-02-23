@@ -1329,6 +1329,111 @@ app.post("/api/fleet/refresh", (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/sessions — read sessions store directly (no CLI spawn)
+// ---------------------------------------------------------------------------
+
+app.get("/api/sessions", (_req, res) => {
+  try {
+    const sessionsPath = path.join(process.env.HOME ?? "/Users/centrick", ".openclaw/agents/main/sessions/sessions.json");
+    if (!fs.existsSync(sessionsPath)) {
+      res.json({ total: 0, sessions: [], modelSummary: {} });
+      return;
+    }
+    const raw = JSON.parse(fs.readFileSync(sessionsPath, "utf8")) as Record<string, Record<string, unknown>>;
+    const now = Date.now();
+
+    const sessions = Object.entries(raw).map(([key, s]) => {
+      const updatedAt = (s.updatedAt as number) ?? 0;
+      const ageMins = Math.floor((now - updatedAt) / 60000);
+      const ageLabel =
+        ageMins < 1 ? "just now"
+        : ageMins < 60 ? `${ageMins}m ago`
+        : ageMins < 1440 ? `${Math.floor(ageMins / 60)}h ago`
+        : `${Math.floor(ageMins / 1440)}d ago`;
+
+      const isCron = key.includes(":cron:");
+      const isSubagent = key.includes(":subag");
+      const isGroup = (s.chatType as string) === "group";
+      const kind = isGroup ? "group" : isCron ? "cron" : isSubagent ? "subagent" : "direct";
+
+      // Derive a readable label
+      let label = key;
+      if (key === "agent:main:main") label = "main (you)";
+      else if (isCron) label = `cron:${key.split(":").pop()?.slice(0, 8)}`;
+      else if (isSubagent) label = `subagent:${key.split(":").pop()?.slice(0, 8)}`;
+      else if (isGroup) label = `group:${key.split(":").pop()?.slice(0, 8)}`;
+
+      const origin = s.origin ? (s.origin as Record<string, string>).label ?? "" : "";
+
+      return {
+        key,
+        label,
+        kind,
+        model: (s.model as string) ?? "unknown",
+        modelProvider: (s.modelProvider as string) ?? "",
+        updatedAt,
+        ageLabel,
+        contextTokens: (s.contextTokens as number) ?? 0,
+        totalTokens: (s.totalTokens as number) ?? 0,
+        inputTokens: (s.inputTokens as number) ?? 0,
+        outputTokens: (s.outputTokens as number) ?? 0,
+        aborted: (s.abortedLastRun as boolean) ?? false,
+        origin,
+      };
+    });
+
+    sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+
+    // Model summary
+    const modelSummary: Record<string, number> = {};
+    for (const s of sessions) {
+      modelSummary[s.model] = (modelSummary[s.model] ?? 0) + 1;
+    }
+
+    res.json({ total: sessions.length, sessions, modelSummary });
+  } catch (err) {
+    console.error("Sessions error:", err);
+    res.status(500).json({ error: "Failed to read sessions" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/agents/:id/profile — IDENTITY.md + SOUL.md for known agents
+// ---------------------------------------------------------------------------
+
+app.get("/api/agents/:id/profile", (req, res) => {
+  const home = process.env.HOME ?? "/Users/centrick";
+
+  interface AgentProfile { name: string; emoji: string; identityPath: string; soulPath: string }
+  const profiles: Record<string, AgentProfile> = {
+    aurel: {
+      name: "Aurel",
+      emoji: "🏛️",
+      identityPath: path.join(home, ".openclaw/workspace/IDENTITY.md"),
+      soulPath: path.join(home, ".openclaw/workspace/SOUL.md"),
+    },
+    soren: {
+      name: "Søren",
+      emoji: "🧠",
+      identityPath: path.join(home, "clawd/coordination/IDENTITY.md"),
+      soulPath: path.join(home, "clawd/coordination/SOUL.md"),
+    },
+  };
+
+  const profile = profiles[req.params.id];
+  if (!profile) { res.status(404).json({ error: `Unknown agent: ${req.params.id}` }); return; }
+
+  const identity = fs.existsSync(profile.identityPath) ? fs.readFileSync(profile.identityPath, "utf8") : null;
+  const soul = fs.existsSync(profile.soulPath) ? fs.readFileSync(profile.soulPath, "utf8") : null;
+  const statusPath = req.params.id === "aurel"
+    ? path.join(home, "clawd/aurel/status/aurel.json")
+    : path.join(home, "clawd/coordination/status/soren.json");
+  const status = readJsonFile(statusPath);
+
+  res.json({ id: req.params.id, name: profile.name, emoji: profile.emoji, identity, soul, status });
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 

@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useFleetStatus } from "@/lib/api/local";
+import { AgentProfileModal } from "@/components/agent-profile-modal";
 import {
   PageHeader,
   PageHeaderRow,
@@ -25,7 +26,7 @@ import {
   Wifi,
   Brain,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ function SectionCard({ icon, title, children }: { icon: React.ReactNode; title: 
   );
 }
 
-function AgentRow({ agent }: { agent: { id: string; name: string; emoji: string; status: string; lastHeartbeat: number | null } }) {
+function AgentRow({ agent, onClick }: { agent: { id: string; name: string; emoji: string; status: string; lastHeartbeat: number | null }; onClick: () => void }) {
   const online = agent.status === "online";
   const ago = agent.lastHeartbeat
     ? (() => {
@@ -69,7 +70,9 @@ function AgentRow({ agent }: { agent: { id: string; name: string; emoji: string;
     <div className="flex items-center justify-between py-1.5 border-b last:border-0 text-sm">
       <div className="flex items-center gap-2">
         <StatusDot ok={online} />
-        <span>{agent.emoji} {agent.name}</span>
+        <button onClick={onClick} className="hover:underline text-primary font-medium">
+          {agent.emoji} {agent.name}
+        </button>
       </div>
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
         <span>{ago}</span>
@@ -83,6 +86,7 @@ function AgentRow({ agent }: { agent: { id: string; name: string; emoji: string;
 
 export default function FleetPage() {
   const { data, error, isLoading, mutate } = useFleetStatus();
+  const [profileId, setProfileId] = useState<string | null>(null);
 
   const updatedLabel = useMemo(() => {
     if (!data?.updatedAt) return "";
@@ -185,7 +189,7 @@ export default function FleetPage() {
           </div>
           <div>
             {data.agents.items.map(agent => (
-              <AgentRow key={agent.id} agent={agent} />
+              <AgentRow key={agent.id} agent={agent} onClick={() => setProfileId(agent.id)} />
             ))}
           </div>
         </SectionCard>
@@ -263,6 +267,8 @@ export default function FleetPage() {
         </SectionCard>
 
       </div>
+
+      <AgentProfileModal agentId={profileId} onClose={() => setProfileId(null)} />
     </>
   );
 }
