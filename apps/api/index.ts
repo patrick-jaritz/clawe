@@ -1561,10 +1561,11 @@ app.get("/api/coordination/status", async (_req, res) => {
   // git pull (non-blocking, best-effort)
   let pullResult = "skipped";
   try {
-    // Stash local changes, pull, pop stash (handles soren.json heartbeat writes)
-    execSync(`git -C "${COORD_DIR}" stash 2>&1`, { encoding: "utf8", timeout: 3000 });
+    // Stash local changes (ignore error if nothing to stash), pull, pop stash
+    let didStash = false;
+    try { execSync(`git -C "${COORD_DIR}" stash 2>&1`, { encoding: "utf8", timeout: 3000 }); didStash = true; } catch { /* nothing to stash — ok */ }
     const out = execSync(`git -C "${COORD_DIR}" pull --ff-only 2>&1`, { encoding: "utf8", timeout: 6000 });
-    try { execSync(`git -C "${COORD_DIR}" stash pop 2>&1`, { encoding: "utf8", timeout: 3000 }); } catch { /* no stash */ }
+    if (didStash) { try { execSync(`git -C "${COORD_DIR}" stash pop 2>&1`, { encoding: "utf8", timeout: 3000 }); } catch { /* no stash */ } }
     pullResult = out.trim().split("\n").pop() ?? "ok";
   } catch (e) { pullResult = `error: ${(e as Error).message.slice(0, 80)}`; }
 
