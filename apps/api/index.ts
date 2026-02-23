@@ -1551,20 +1551,16 @@ app.get("/api/integrations", (_req, res) => {
       icon: "🤖",
       category: "messaging",
       status: (() => {
-        // Token may be in openclaw.json env OR gateway LaunchAgent plist
-        if (env.TELEGRAM_BOT_TOKEN) return "connected";
-        try {
-          const plist = fs.readFileSync(path.join(process.env.HOME ?? "", "Library/LaunchAgents/ai.openclaw.gateway.plist"), "utf8");
-          return plist.includes("TELEGRAM_BOT_TOKEN") ? "connected" : "disconnected";
-        } catch { return "disconnected"; }
+        const tg = (cfg.telegram as Record<string, unknown> | undefined);
+        return (tg?.enabled && tg?.botToken) ? "connected" : "disconnected";
       })() as "connected" | "disconnected",
       detail: (() => {
-        if (env.TELEGRAM_BOT_TOKEN) return `Bot token set (openclaw.json)`;
-        try {
-          const plist = fs.readFileSync(path.join(process.env.HOME ?? "", "Library/LaunchAgents/ai.openclaw.gateway.plist"), "utf8");
-          if (plist.includes("TELEGRAM_BOT_TOKEN")) return "Bot token set (gateway plist)";
-        } catch { /* */ }
-        return "No token found";
+        const tg = (cfg.telegram as Record<string, unknown> | undefined);
+        if (tg?.enabled && tg?.botToken) {
+          const token = String(tg.botToken);
+          return `Bot active · token ...${token.slice(-8)}`;
+        }
+        return "Not configured";
       })(),
     },
     {
