@@ -904,6 +904,46 @@ app.get("/api/repos/resources", (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/admin/deploy  (git pull + optional restart — callable over Tailscale)
+// ---------------------------------------------------------------------------
+
+app.post("/api/admin/deploy", express.json(), (req, res) => {
+  const { restart = false } = (req.body ?? {}) as { restart?: boolean };
+  const cwd = path.join(process.env.HOME ?? "/Users/centrick", "clawd/clawe");
+
+  try {
+    const pull = execSync("git pull origin main 2>&1", { cwd, encoding: "utf8", timeout: 30000 });
+    const lines = pull.trim().split("\n");
+    const alreadyUpToDate = lines.some((l) => l.includes("Already up to date"));
+
+    let restartLog = "";
+    if (restart && !alreadyUpToDate) {
+      try {
+        restartLog = execSync(
+          "pm2 restart clawe-api clawe-web 2>&1 || launchctl kickstart -k gui/$(id -u)/com.centrick.clawe-api 2>&1 || true",
+          { cwd, encoding: "utf8", timeout: 15000 },
+        );
+      } catch {
+        restartLog = "restart attempted (manual restart may be needed)";
+      }
+    }
+
+    notifySSE({ type: "deploy", pulled: !alreadyUpToDate, log: lines.slice(-3).join(" | ") });
+
+    res.json({
+      ok: true,
+      pulled: !alreadyUpToDate,
+      alreadyUpToDate,
+      log: lines.join("\n"),
+      restartLog: restartLog || null,
+    });
+  } catch (err) {
+    console.error("Deploy error:", err);
+    res.status(500).json({ error: "Deploy failed", detail: String(err) });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 
