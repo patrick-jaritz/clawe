@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer, Database, GraduationCap, BarChart2, Puzzle, ShieldCheck, MonitorDot, GitMerge } from "lucide-react";
-import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer, BookOpen } from "lucide-react";
+import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer, Database, GraduationCap, BarChart2, Puzzle, ShieldCheck, MonitorDot, GitMerge, BookOpen } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { NavMain, type NavItem } from "./nav-main";
