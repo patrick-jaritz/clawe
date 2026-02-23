@@ -660,3 +660,21 @@ export async function setPreferredModel(modelId: string): Promise<{ ok: boolean 
   if (!res.ok) throw new Error("Failed to set preferred model");
   return res.json() as Promise<{ ok: boolean }>;
 }
+
+// Fleet status
+export interface FleetConnectivity { name: string; ok: boolean; message: string }
+export interface FleetStatus {
+  overall: "green" | "yellow" | "red";
+  updatedAt: number;
+  cached?: boolean;
+  crons: { total: number; ok: number; errors: number; recentErrors: Array<{ id: string; name: string; last: string }> };
+  agents: { total: number; online: number; items: Array<{ id: string; name: string; emoji: string; status: string; lastHeartbeat: number | null }> };
+  gateway: { running: boolean; mode: string; port: string; warnings: string[] };
+  memory: { facts: number; decisions: number; checkpoints: number };
+  services: { api: boolean; qdrant: boolean; lancedb: boolean; chunks: number };
+  connectivity: FleetConnectivity[];
+}
+
+export function useFleetStatus() {
+  return useSWR<FleetStatus>("/api/fleet/status", fetcher, { refreshInterval: 3 * 60 * 1000 });
+}

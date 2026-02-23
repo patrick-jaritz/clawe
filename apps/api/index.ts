@@ -1172,6 +1172,144 @@ app.put("/api/settings/models/preferred", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/fleet/status — aggregated fleet health
+// ---------------------------------------------------------------------------
+
+interface ConnectivityResult { name: string; ok: boolean; message: string }
+interface FleetStatus {
+  overall: "green" | "yellow" | "red";
+  updatedAt: number;
+  crons: { total: number; ok: number; errors: number; recentErrors: Array<{ id: string; name: string; last: string }> };
+  agents: { total: number; online: number; items: Array<{ id: string; name: string; emoji: string; status: string; lastHeartbeat: number | null }> };
+  gateway: { running: boolean; mode: string; port: string; warnings: string[] };
+  memory: { facts: number; decisions: number; checkpoints: number };
+  services: { api: boolean; qdrant: boolean; lancedb: boolean; chunks: number };
+  connectivity: ConnectivityResult[];
+}
+
+let fleetCache: FleetStatus | null = null;
+let fleetCacheAt = 0;
+
+async function buildFleetStatus(): Promise<FleetStatus> {
+  // --- Crons (from cache) ---
+  const cronOk = cronCache.crons.filter(c => c.status === "ok" || c.status === "").length;
+  const cronErrors = cronCache.crons.filter(c => c.status === "error").length;
+  const recentErrors = cronCache.crons
+    .filter(c => c.status === "error")
+    .slice(0, 5)
+    .map(c => ({ id: c.id, name: c.name, last: c.last }));
+
+  // --- Agents (from status files) ---
+  const aurelData = readJsonFile(path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json"));
+  const sorenData = readJsonFile(path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"));
+  const aurelHb = resolveHeartbeat(aurelData);
+  const sorenHb = resolveHeartbeat(sorenData);
+  const agentItems = [
+    { id: "aurel", name: "Aurel", emoji: "🏛️", status: aurelData ? deriveStatus(aurelData.health, aurelHb) : "offline", lastHeartbeat: aurelHb ?? null },
+    { id: "soren", name: "Søren", emoji: "🧠", status: sorenData ? deriveStatus(sorenData.health, sorenHb) : "offline", lastHeartbeat: sorenHb ?? null },
+  ];
+  const agentsOnline = agentItems.filter(a => a.status === "online").length;
+
+  // --- Gateway ---
+  let gatewayRunning = false;
+  let gatewayMode = "unknown";
+  let gatewayPort = "";
+  const gatewayWarnings: string[] = [];
+  try {
+    const raw = execSync("openclaw gateway status 2>/dev/null", { encoding: "utf8", timeout: 4000 });
+    gatewayRunning = raw.includes("LaunchAgent") || raw.includes("loaded") || raw.includes("running");
+    const portM = raw.match(/port[=:\s]+(\d+)/i);
+    gatewayPort = portM ? portM[1] : "18789";
+    const modeM = raw.match(/Service:\s*(.+)/);
+    gatewayMode = modeM ? modeM[1].trim() : "LaunchAgent";
+    const warnLines = raw.split("\n").filter(l => l.toLowerCase().includes("warn") || l.toLowerCase().includes("skipped") || l.toLowerCase().includes("error"));
+    gatewayWarnings.push(...warnLines.map(l => l.trim()).filter(Boolean).slice(0, 3));
+  } catch { /* leave defaults */ }
+
+  // --- Memory stats ---
+  let memFacts = 0, memDecisions = 0, memCheckpoints = 0;
+  try {
+    const memRaw = execSync(`node /Users/centrick/clawd/aurel/memory-system/cli.js stats 2>/dev/null`, { encoding: "utf8", timeout: 5000 });
+    const factsM = memRaw.match(/Total facts[:\s]+(\d+)/i);
+    const decisM = memRaw.match(/Decisions[:\s]+(\d+)/i);
+    const checkM = memRaw.match(/checkpoints[:\s]+(\d+)/i);
+    memFacts = factsM ? parseInt(factsM[1]) : 0;
+    memDecisions = decisM ? parseInt(decisM[1]) : 0;
+    memCheckpoints = checkM ? parseInt(checkM[1]) : 0;
+  } catch { /* leave defaults */ }
+
+  // --- Services (from existing health check) ---
+  let qdrantOk = false;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request({ hostname: "localhost", port: 6333, path: "/readyz", timeout: 800 }, (r) => { qdrantOk = r.statusCode === 200; resolve(); });
+      req.on("error", reject); req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); }); req.end();
+    });
+  } catch { /* offline */ }
+  const lanceDbPath = "/Users/centrick/clawd/aurel/memory-system/lancedb/";
+  const lanceDbOk = fs.existsSync(lanceDbPath);
+
+  // --- Connectivity checks ---
+  const connectivity: ConnectivityResult[] = [];
+  const configRaw = (() => { try { return execSync("cat ~/.openclaw/openclaw.json", { encoding: "utf8" }).replace(/,(\s*[}\]])/g, "$1"); } catch { return "{}"; } })();
+  const envVars = (() => { try { return ((JSON.parse(configRaw) as Record<string,unknown>).env as Record<string,unknown>)?.vars as Record<string, string> ?? {}; } catch { return {} as Record<string, string>; } })();
+
+  const notionKey = envVars.NOTION_API_KEY ?? "";
+  if (notionKey) {
+    try {
+      const notionOk = await new Promise<boolean>((resolve) => {
+        const req = https.request({ hostname: "api.notion.com", path: "/v1/users/me", method: "GET", timeout: 3000, headers: { "Authorization": `Bearer ${notionKey}`, "Notion-Version": "2022-06-28" } }, (r) => resolve(r.statusCode === 200));
+        req.on("error", () => resolve(false)); req.on("timeout", () => { req.destroy(); resolve(false); }); req.end();
+      });
+      connectivity.push({ name: "Notion", ok: notionOk, message: notionOk ? "Connected" : "Auth failed (401/403)" });
+    } catch { connectivity.push({ name: "Notion", ok: false, message: "Request failed" }); }
+  } else {
+    connectivity.push({ name: "Notion", ok: false, message: "No API key set" });
+  }
+
+  connectivity.push({ name: "Anthropic", ok: Boolean(envVars.ANTHROPIC_API_KEY), message: envVars.ANTHROPIC_API_KEY ? "Key configured" : "No key set" });
+  connectivity.push({ name: "OpenAI", ok: Boolean(envVars.OPENAI_API_KEY), message: envVars.OPENAI_API_KEY ? "Key configured" : "No key set" });
+  connectivity.push({ name: "Brave Search", ok: Boolean(envVars.BRAVE_API_KEY), message: envVars.BRAVE_API_KEY ? "Key configured" : "No key set" });
+
+  const gogCreds = path.join(process.env.HOME ?? "/Users/centrick", ".config/gog/credentials.json");
+  const gogOk = fs.existsSync(gogCreds);
+  connectivity.push({ name: "Gmail (gog)", ok: gogOk, message: gogOk ? "Credentials found" : "No credentials (run gog auth)" });
+
+  // --- Overall status ---
+  const hasRed = cronErrors > 3 || agentsOnline === 0 || !gatewayRunning || connectivity.filter(c => !c.ok).length > 2;
+  const hasYellow = cronErrors > 0 || agentsOnline < agentItems.length || connectivity.some(c => !c.ok);
+  const overall: "green" | "yellow" | "red" = hasRed ? "red" : hasYellow ? "yellow" : "green";
+
+  return {
+    overall,
+    updatedAt: Date.now(),
+    crons: { total: cronCache.total, ok: cronOk, errors: cronErrors, recentErrors },
+    agents: { total: agentItems.length, online: agentsOnline, items: agentItems },
+    gateway: { running: gatewayRunning, mode: gatewayMode, port: gatewayPort, warnings: gatewayWarnings },
+    memory: { facts: memFacts, decisions: memDecisions, checkpoints: memCheckpoints },
+    services: { api: true, qdrant: qdrantOk, lancedb: lanceDbOk, chunks: 0 },
+    connectivity,
+  };
+}
+
+app.get("/api/fleet/status", async (_req, res) => {
+  const FLEET_TTL = 3 * 60 * 1000; // 3 minutes
+  if (fleetCache && Date.now() - fleetCacheAt < FLEET_TTL) {
+    res.json({ ...fleetCache, cached: true });
+    return;
+  }
+  try {
+    const status = await buildFleetStatus();
+    fleetCache = status;
+    fleetCacheAt = Date.now();
+    res.json(status);
+  } catch (err) {
+    console.error("Fleet status error:", err);
+    res.status(500).json({ error: "Failed to build fleet status" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 
