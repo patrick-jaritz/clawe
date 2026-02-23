@@ -33,7 +33,7 @@ const SkillsPage = () => {
     if (!data?.skills) return [];
     const query = searchQuery.toLowerCase().trim();
     return data.skills.filter((skill) => {
-      if (ownerFilter !== "all" && getSkillOwner(skill.id, skill.name) !== ownerFilter) return false;
+      if (ownerFilter !== "all" && getSkillOwner(skill.id, skill.name, (skill as Record<string, unknown>).owner as string | undefined) !== ownerFilter) return false;
       if (!query) return true;
       return (
         skill.name.toLowerCase().includes(query) ||
@@ -143,7 +143,7 @@ const SkillsPage = () => {
               <Card key={skill.id} className="p-4 flex flex-col">
                 <div className="flex items-start justify-between mb-2">
                   <span className="text-3xl">{skill.emoji}</span>
-                  <OwnerBadge owner={getSkillOwner(skill.id, skill.name)} size="sm" />
+                  <OwnerBadge owner={getSkillOwner(skill.id, skill.name, (skill as Record<string, unknown>).owner as string | undefined)} size="sm" />
                 </div>
                 <h3 className="font-semibold text-sm mb-1">{skill.name}</h3>
                 <p className="text-xs text-muted-foreground line-clamp-3 flex-1 mt-1">

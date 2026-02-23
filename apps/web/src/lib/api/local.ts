@@ -304,6 +304,13 @@ export function useMemoryDecisions() {
   });
 }
 
+export type SorenDecision = { date: string; decision: string };
+export function useSorenDecisions() {
+  return useSWR<{ decisions: SorenDecision[] }>("/api/memory/soren-decisions", fetcher, {
+    revalidateOnFocus: false,
+  });
+}
+
 // ── Tailscale ─────────────────────────────────────────────────────────────────
 
 export type TailscaleDevice = {

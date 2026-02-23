@@ -90,7 +90,7 @@ const CronsPage = () => {
       a.status === "error" ? -1 : b.status === "error" ? 1 : 0,
     );
     if (ownerFilter === "all") return base;
-    return base.filter((c) => getCronOwner(c.name, c.agent) === ownerFilter);
+    return base.filter((c) => getCronOwner(c.name, c.agent, (c as Record<string, unknown>).owner as string | undefined) === ownerFilter);
   }, [crons, ownerFilter]);
 
   const errorCount = sorted.filter((c) => c.status === "error").length;
@@ -198,7 +198,7 @@ const CronsPage = () => {
               const isError = cron.status === "error";
               const hasDeliveryWarn = !isError && !!cron.errorMsg;
               const config = statusConfig[cron.status] ?? statusConfig.unknown;
-              const owner = getCronOwner(cron.name, cron.agent);
+              const owner = getCronOwner(cron.name, cron.agent, (cron as Record<string, unknown>).owner as string | undefined);
               const lastRun = cron.lastRun ?? cron.last;
               const nextRun = cron.nextRun ?? cron.next;
               const errorDetail = cron.lastError ?? cron.errorMsg;

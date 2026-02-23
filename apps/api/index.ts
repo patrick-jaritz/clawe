@@ -914,6 +914,19 @@ app.get("/api/memory/decisions", (_req, res) => {
   }
 });
 
+// Søren's decisions (from coordination status file)
+app.get("/api/memory/soren-decisions", (_req, res) => {
+  try {
+    const sorenStatus = readJsonFile(
+      path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"),
+    );
+    const decisions = (sorenStatus?.decisions as Array<{ date: string; decision: string }>) ?? [];
+    res.json({ decisions });
+  } catch {
+    res.json({ decisions: [] });
+  }
+});
+
 app.get("/api/memory/entity/:entity", (req, res) => {
   try {
     const { entity } = req.params;

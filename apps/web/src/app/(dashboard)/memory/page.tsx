@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
-import { useMemoryQuery, useMemoryDecisions } from "@/lib/api/local";
+import { useMemoryQuery, useMemoryDecisions, useSorenDecisions } from "@/lib/api/local";
 import {
   PageHeader,
   PageHeaderRow,
@@ -19,7 +19,7 @@ import { OwnerBadge } from "@/components/owner-badge";
 import { cn } from "@clawe/ui/lib/utils";
 import { mutate } from "swr";
 
-type Tab = "search" | "decisions";
+type Tab = "search" | "decisions" | "soren-decisions";
 
 // Parse the CLI markdown output into individual memory blocks
 function parseMemoryBlocks(raw: string): Array<{ tier: string; entity: string; key: string; value: string; rationale?: string }> {
@@ -85,12 +85,13 @@ const MemoryPage = () => {
 
   const { data: queryData, isLoading: queryLoading } = useMemoryQuery(debouncedQuery);
   const { data: decisionsData, isLoading: decisionsLoading } = useMemoryDecisions();
+  const { data: sorenDecisionsData, isLoading: sorenDecisionsLoading } = useSorenDecisions();
 
   const searchBlocks = parseMemoryBlocks(queryData?.raw ?? "");
   const decisionBlocks = parseMemoryBlocks(decisionsData?.raw ?? "");
 
-  const blocks = tab === "search" ? searchBlocks : decisionBlocks;
-  const isLoading = tab === "search" ? queryLoading : decisionsLoading;
+  const blocks = tab === "search" ? searchBlocks : tab === "decisions" ? decisionBlocks : [];
+  const isLoading = tab === "search" ? queryLoading : tab === "decisions" ? decisionsLoading : sorenDecisionsLoading;
 
   return (
     <>
@@ -102,6 +103,7 @@ const MemoryPage = () => {
             variant="outline"
             onClick={() => {
               mutate("/api/memory/decisions");
+              mutate("/api/memory/soren-decisions");
               mutate((key: string) => typeof key === "string" && key.startsWith("/api/memory/query"));
             }}
           >
@@ -113,7 +115,7 @@ const MemoryPage = () => {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-4">
-        {(["search", "decisions"] as Tab[]).map((t) => (
+        {(["search", "decisions", "soren-decisions"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -125,7 +127,7 @@ const MemoryPage = () => {
             )}
           >
             {t === "search" ? <Brain className="h-4 w-4" /> : <Lightbulb className="h-4 w-4" />}
-            {t === "search" ? "Facts" : "Decisions"}
+            {t === "search" ? "Facts" : t === "decisions" ? "🏛️ Aurel Decisions" : "🧠 Søren Decisions"}
           </button>
         ))}
       </div>
@@ -158,7 +160,7 @@ const MemoryPage = () => {
           </>
         )}
 
-        {!isLoading && blocks.length === 0 && (
+        {!isLoading && tab !== "soren-decisions" && blocks.length === 0 && (
           <Card className="p-8 text-center text-muted-foreground">
             {tab === "search" && debouncedQuery
               ? `No results for "${debouncedQuery}"`
@@ -168,7 +170,36 @@ const MemoryPage = () => {
           </Card>
         )}
 
-        {!isLoading && blocks.map((block, i) => (
+        {/* Søren Decisions tab */}
+        {tab === "soren-decisions" && !sorenDecisionsLoading && (
+          <>
+            {(sorenDecisionsData?.decisions ?? []).length === 0 ? (
+              <Card className="p-8 text-center text-muted-foreground">No Søren decisions recorded yet</Card>
+            ) : (
+              (sorenDecisionsData?.decisions ?? []).map((d, i) => (
+                <Card key={i} className="p-3">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                        decision
+                      </span>
+                      <span className="text-xs font-mono text-muted-foreground">{d.date}</span>
+                      <OwnerBadge owner="soren" />
+                    </div>
+                    <p className="text-sm leading-relaxed">{d.decision}</p>
+                  </div>
+                </Card>
+              ))
+            )}
+            {(sorenDecisionsData?.decisions ?? []).length > 0 && (
+              <p className="text-center text-xs text-muted-foreground pt-2">
+                {sorenDecisionsData!.decisions.length} decision{sorenDecisionsData!.decisions.length !== 1 ? "s" : ""}
+              </p>
+            )}
+          </>
+        )}
+
+        {!isLoading && tab !== "soren-decisions" && blocks.map((block, i) => (
           <Card key={i} className="p-3">
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
@@ -193,7 +224,7 @@ const MemoryPage = () => {
           </Card>
         ))}
 
-        {!isLoading && blocks.length > 0 && (
+        {!isLoading && tab !== "soren-decisions" && blocks.length > 0 && (
           <p className="text-center text-xs text-muted-foreground pt-2">
             {blocks.length} result{blocks.length !== 1 ? "s" : ""}
           </p>

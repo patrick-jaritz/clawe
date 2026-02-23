@@ -91,7 +91,7 @@ export default function SessionsPage() {
     if (!data?.sessions) return [];
     return data.sessions.filter((s) => {
       if (filter !== "all" && s.kind !== filter) return false;
-      if (ownerFilter !== "all" && getSessionOwner(s.key, s.label, s.kind) !== ownerFilter) return false;
+      if (ownerFilter !== "all" && getSessionOwner(s.key, s.label, s.kind, (s as Record<string, unknown>).owner as string | undefined) !== ownerFilter) return false;
       return true;
     });
   }, [data?.sessions, filter, ownerFilter]);
@@ -195,7 +195,7 @@ export default function SessionsPage() {
             {filtered.map((s) => {
               const isMain = s.key === "agent:main:main";
               const active = isActiveSession(s.updatedAt);
-              const owner = getSessionOwner(s.key, s.label, s.kind);
+              const owner = getSessionOwner(s.key, s.label, s.kind, (s as Record<string, unknown>).owner as string | undefined);
               return (
                 <tr key={s.key} className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${isMain ? "bg-primary/5" : ""}`}>
                   <td className="px-3 py-2 text-center">

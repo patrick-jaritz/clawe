@@ -28,7 +28,14 @@ const SYSTEM_CRON_PATTERNS = [
 ];
 const SOREN_CRON_PATTERNS = [/soren/i];
 
-export function getCronOwner(name: string, agent?: string): CronOwner {
+export function getCronOwner(name: string, agent?: string, apiOwner?: string): CronOwner {
+  // Trust the API owner field first (set by heartbeat data)
+  if (apiOwner) {
+    const lower = apiOwner.toLowerCase();
+    if (lower === "søren" || lower === "soren" || lower === "søren") return "soren";
+    if (lower === "aurel") return "aurel";
+    if (lower === "system" || lower === "sys") return "system";
+  }
   if (SOREN_CRON_PATTERNS.some((p) => p.test(name))) return "soren";
   const agentStr = agent ?? "";
   if (SYSTEM_CRON_PATTERNS.some((p) => p.test(name)) || agentStr.startsWith("mainten") || agentStr.startsWith("orchest")) return "system";
@@ -40,11 +47,16 @@ export function getCronOwner(name: string, agent?: string): CronOwner {
 const SOREN_SESSION_PATTERNS  = [/soren/i, /strategist/i];
 const SYSTEM_SESSION_PATTERNS = [/maintenance/i, /healthcheck/i, /watchdog/i, /fleet/i];
 
-export function getSessionOwner(key: string, label: string, kind?: string): CronOwner {
+export function getSessionOwner(key: string, label: string, kind?: string, apiOwner?: string): CronOwner {
+  if (apiOwner) {
+    const lower = apiOwner.toLowerCase();
+    if (lower === "søren" || lower === "soren" || lower === "søren") return "soren";
+    if (lower === "aurel") return "aurel";
+    if (lower === "system" || lower === "sys") return "system";
+  }
   const combined = `${key} ${label}`;
   if (SOREN_SESSION_PATTERNS.some((p) => p.test(combined))) return "soren";
   if (SYSTEM_SESSION_PATTERNS.some((p) => p.test(combined))) return "system";
-  // Cron sessions initiated by system maintenance agent → system
   if (kind === "cron" && /mainten|orchestrat/i.test(combined)) return "system";
   return "aurel";
 }
@@ -64,7 +76,13 @@ export function getMemoryOwner(entity: string, key?: string): CronOwner {
 const SOREN_SKILL_PATTERNS  = [/soren/i];
 const SYSTEM_SKILL_PATTERNS = [/github/i, /health/i, /weather/i, /whisper/i, /video/i, /skill.creator/i];
 
-export function getSkillOwner(id: string, name: string): CronOwner {
+export function getSkillOwner(id: string, name: string, apiOwner?: string): CronOwner {
+  if (apiOwner) {
+    const lower = apiOwner.toLowerCase();
+    if (lower === "søren" || lower === "soren" || lower === "søren") return "soren";
+    if (lower === "aurel") return "aurel";
+    if (lower === "system" || lower === "sys") return "system";
+  }
   const combined = `${id} ${name}`;
   if (SOREN_SKILL_PATTERNS.some((p) => p.test(combined))) return "soren";
   if (SYSTEM_SKILL_PATTERNS.some((p) => p.test(combined))) return "system";
