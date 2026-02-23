@@ -554,6 +554,7 @@ export type CronJob = {
   id: string;
   name: string;
   schedule: string;
+  agent: string;
   errorMsg?: string;
   next: string;
   last: string;

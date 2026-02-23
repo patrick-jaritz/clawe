@@ -86,39 +86,85 @@ function healthDot(health: string) {
 // ─── cron schedule parser ─────────────────────────────────────────────────────
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
-function cronMatchesDay(cronExpr: string, dayIndex: number): boolean {
-  if (!cronExpr) return false;
-  // "daily" shorthand
-  if (cronExpr.includes("daily") || cronExpr === "@daily") return true;
-  // Standard cron: min hour day-of-month month day-of-week
-  const parts = cronExpr.trim().split(/\s+/);
-  if (parts.length < 5) return false;
-  const dow = parts[4]; // day-of-week field
-  if (dow === "*") return true; // every day
-  // Comma-separated list
-  const days = dow.split(",");
-  return days.some((d) => {
-    const n = parseInt(d);
+function parseDayToken(tok: string): number {
+  const lower = tok.toLowerCase();
+  const idx = DAY_NAMES.indexOf(lower);
+  if (idx >= 0) return idx;
+  return parseInt(tok, 10);
+}
+
+function cronMatchesDay(rawSchedule: string, dayIndex: number): boolean {
+  if (!rawSchedule) return false;
+  if (rawSchedule.includes("daily") || rawSchedule === "@daily") return true;
+
+  // Strip OpenClaw prefix/suffix: "cron 0 15 * * 2 @ Asia/Jerusalem" or "(exact)"
+  const s = rawSchedule
+    .replace(/^cron\s+/, "")          // strip leading "cron "
+    .replace(/\s*@\s*\S+.*$/, "")     // strip " @ timezone..."
+    .replace(/\s*\(exact\).*$/i, "")  // strip " (exact)"
+    .trim();
+
+  // "every Nd" patterns — daily=every day, weekly=show on all days in grid
+  if (/^every\s+\d+[dh]/i.test(s)) return true;
+
+  const parts = s.split(/\s+/);
+  if (parts.length < 5) return true; // unknown format — show on all days
+
+  const dow = parts[4]; // 5th field = day-of-week
+  if (!dow || dow === "*") return true;
+
+  // Handle ranges (e.g. "MON-FRI" → "1-5") and comma lists
+  return dow.split(",").some((seg) => {
+    if (seg.includes("-")) {
+      const [a, b] = seg.split("-").map(parseDayToken);
+      return !isNaN(a) && !isNaN(b) && dayIndex >= a && dayIndex <= b;
+    }
+    const n = parseDayToken(seg);
     return !isNaN(n) && n === dayIndex;
   });
 }
 
+// ─── cron owner detection ─────────────────────────────────────────────────────
+
+type CronOwner = "aurel" | "soren" | "system";
+
+const SYSTEM_PATTERNS = [
+  /fleet.health/i, /agent.health/i, /watchdog/i, /orchestrator/i,
+  /nightly.memory/i, /daily.log/i, /memory.auto/i, /memory.janitor/i,
+  /maintenance/i,
+];
+const SOREN_PATTERNS = [/soren/i];
+
+function getCronOwner(name: string, agent: string): CronOwner {
+  if (SOREN_PATTERNS.some((p) => p.test(name))) return "soren";
+  if (SYSTEM_PATTERNS.some((p) => p.test(name)) || agent.startsWith("mainten") || agent.startsWith("orchest")) return "system";
+  return "aurel";
+}
+
+const OWNER_STYLE: Record<CronOwner, { label: string; cls: string }> = {
+  aurel:  { label: "Aurel",  cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
+  soren:  { label: "Søren",  cls: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" },
+  system: { label: "Sys",    cls: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
+};
+
 // ─── Weekly Routines ─────────────────────────────────────────────────────────
+
+interface RoutineItem { name: string; status: string; agent: string; errorMsg?: string; }
 
 function WeeklyRoutineGrid() {
   const { data } = useCrons();
   const today = new Date().getDay();
 
-  // Build a day→crons map
   const dayMap = useMemo(() => {
-    const map: Record<number, Array<{ name: string; status: string }>> = {};
+    const map: Record<number, RoutineItem[]> = {};
     for (let i = 0; i < 7; i++) map[i] = [];
     if (!data?.crons) return map;
     for (const cron of data.crons) {
       for (let d = 0; d < 7; d++) {
         if (cronMatchesDay(cron.schedule ?? "", d)) {
-          map[d].push({ name: cron.name, status: cron.status });
+          map[d].push({ name: cron.name, status: cron.status, agent: cron.agent ?? "main", errorMsg: (cron as { errorMsg?: string }).errorMsg });
         }
       }
     }
@@ -126,13 +172,14 @@ function WeeklyRoutineGrid() {
   }, [data?.crons]);
 
   return (
-    <div className="grid grid-cols-7 gap-2">
+    <div className="grid grid-cols-7 gap-1.5">
       {DAYS.map((day, dayIndex) => {
         const isToday = dayIndex === today;
-        const crons = dayMap[dayIndex] ?? [];
+        const items = dayMap[dayIndex] ?? [];
+
         return (
-          <div key={day} className={`flex min-h-44 flex-col rounded-xl border p-2.5 ${isToday ? "border-primary/40 bg-primary/5" : ""}`}>
-            <div className="mb-2.5 flex items-center justify-between">
+          <div key={day} className={`flex min-h-44 flex-col rounded-xl border p-2 ${isToday ? "border-primary/40 bg-primary/5" : ""}`}>
+            <div className="mb-2 flex items-center justify-between">
               <span className={`text-xs font-medium tracking-wider uppercase ${isToday ? "text-primary" : "text-muted-foreground"}`}>
                 {day}
               </span>
@@ -141,14 +188,40 @@ function WeeklyRoutineGrid() {
               )}
             </div>
             <div className="flex flex-col gap-1">
-              {crons.length === 0 ? (
+              {items.length === 0 ? (
                 <p className="text-[10px] text-muted-foreground italic">—</p>
               ) : (
-                crons.map((c, i) => (
-                  <div key={i} className={`rounded px-1 py-0.5 text-[10px] leading-tight truncate ${c.status === "error" ? "bg-red-100 text-red-700 dark:bg-red-900/30" : "bg-muted text-muted-foreground"}`} title={c.name}>
-                    {c.name}
-                  </div>
-                ))
+                items.map((c, i) => {
+                  const owner = getCronOwner(c.name, c.agent);
+                  const ownerStyle = OWNER_STYLE[owner];
+                  const isError = c.status === "error";
+                  return (
+                    <div
+                      key={i}
+                      title={isError && c.errorMsg ? `Error: ${c.errorMsg}` : c.name}
+                      className={`rounded px-1 py-0.5 space-y-0.5 ${isError ? "bg-red-50 dark:bg-red-950/30 ring-1 ring-red-200 dark:ring-red-800" : "bg-muted/60"}`}
+                    >
+                      <div className={`text-[10px] leading-tight truncate font-medium ${isError ? "text-red-700 dark:text-red-300" : "text-foreground/80"}`}>
+                        {c.name}
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className={`inline-block rounded px-1 text-[9px] font-semibold ${ownerStyle.cls}`}>
+                          {ownerStyle.label}
+                        </span>
+                        {isError && (
+                          <span className="inline-block rounded px-1 text-[9px] font-semibold bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400">
+                            err
+                          </span>
+                        )}
+                      </div>
+                      {isError && c.errorMsg && (
+                        <div className="text-[9px] text-red-600 dark:text-red-400 truncate" title={c.errorMsg}>
+                          {c.errorMsg}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

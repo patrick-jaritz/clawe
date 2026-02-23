@@ -906,20 +906,34 @@ function refreshCronCache() {
     if (code === 0 || raw.includes("ID")) {
       const crons = parseCronTable(raw);
       if (crons.length > 0) {
-        // Enrich error crons with log-derived error messages
-        // Gateway log uses cron slugs (e.g. "healthcheck-fleet-20260215"), not UUIDs
+        // Enrich crons with log-derived error messages
+        // Log uses slugs (e.g. "healthcheck-fleet-20260215") OR UUIDs as cron IDs
+        // "cron announce delivery failed" = cron ran fine but Telegram delivery failed
+        // status=error = cron script itself failed (different issue)
         const cronErrors = readCronErrors();
-        const logIds = Object.keys(cronErrors);
+        const deliveryFailedIds = new Set(Object.keys(cronErrors));
+
         for (const cron of crons) {
+          // Check if this cron's ID appears in the delivery-fail log
+          // Log IDs may be full UUIDs, slugs, or partial matches
+          const inDeliveryLog = [...deliveryFailedIds].some(lid =>
+            cron.id === lid ||
+            cron.id.startsWith(lid) ||
+            lid.startsWith(cron.id.slice(0, 20)) ||
+            lid === cron.name.toLowerCase().replace(/\s+/g, "-")
+          );
+
           if (cron.status === "error") {
-            // Try exact match first, then slug match (log ID contained in cron name or vice versa)
-            const exactMatch = cronErrors[cron.id] ?? cronErrors[cron.name];
-            const fuzzyMatch = logIds.find(lid =>
-              cron.name?.toLowerCase().includes(lid.toLowerCase().replace(/-\d{8,}$/, "")) ||
-              cron.id?.toLowerCase().includes(lid.toLowerCase()) ||
-              lid.toLowerCase().includes(cron.name?.toLowerCase().slice(0, 12) ?? "___")
-            );
-            cron.errorMsg = exactMatch ?? (fuzzyMatch ? cronErrors[fuzzyMatch] : undefined) ?? "Check gateway.log";
+            if (inDeliveryLog) {
+              // Rare: both execution error AND delivery failure
+              cron.errorMsg = `Execution failed + delivery failed (Telegram unreachable)${cron.last ? ` · last: ${cron.last}` : ""}`;
+            } else {
+              // Most common: script crashed, no result delivered
+              cron.errorMsg = `Execution failed${cron.last ? ` · last attempt: ${cron.last}` : ""}`;
+            }
+          } else if (inDeliveryLog) {
+            // Ran OK but couldn't deliver to Telegram — tag with warning but keep status ok
+            cron.errorMsg = `Delivery failed — ran OK but Telegram unreachable`;
           }
         }
         cronCache = { crons, total: crons.length, updatedAt: Date.now() };

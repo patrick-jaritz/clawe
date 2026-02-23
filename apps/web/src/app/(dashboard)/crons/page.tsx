@@ -64,6 +64,7 @@ const CronsPage = () => {
         {data && data.crons.map((cron) => {
           const isOk = cron.status === "ok";
           const isError = cron.status === "error";
+          const hasDeliveryWarn = !isError && !!(cron as { errorMsg?: string }).errorMsg;
 
           return (
             <Card key={cron.id} className={cn(
@@ -122,6 +123,12 @@ const CronsPage = () => {
                     <div className="mt-2 flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded px-2 py-1.5">
                       <span className="font-medium shrink-0">Error:</span>
                       <span className="break-all">{cron.errorMsg}</span>
+                    </div>
+                  )}
+                  {hasDeliveryWarn && (
+                    <div className="mt-2 flex items-start gap-1.5 text-xs text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/30 rounded px-2 py-1.5">
+                      <span className="font-medium shrink-0">⚠ Delivery:</span>
+                      <span className="break-all">{(cron as { errorMsg?: string }).errorMsg}</span>
                     </div>
                   )}
                 </div>
