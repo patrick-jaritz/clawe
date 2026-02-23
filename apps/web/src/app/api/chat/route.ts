@@ -1,62 +1,94 @@
 import type { NextRequest } from "next/server";
-import { createOpenAI } from "@ai-sdk/openai";
-import { streamText } from "ai";
-import { getAuthenticatedTenant } from "@/lib/api/tenant-auth";
-import { getConnection } from "@/lib/squadhub/connection";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const CLAWE_API = process.env.CLAWE_API_URL ?? "http://localhost:3001";
+
 /**
  * POST /api/chat
- * Proxy chat requests to the tenant's squadhub OpenAI-compatible endpoint.
+ * Proxies to CLAWE API /api/chat which runs a CLAWE-aware Anthropic stream.
+ * Falls back to a helpful error if CLAWE API is unreachable.
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await getAuthenticatedTenant(request);
-    if (auth.error) return auth.error;
-
-    const body = await request.json();
-    const { messages, sessionKey } = body;
-
-    if (!sessionKey || typeof sessionKey !== "string") {
-      return new Response(JSON.stringify({ error: "sessionKey is required" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const body = await request.json() as { messages: unknown[]; sessionKey?: string };
+    const { messages } = body;
 
     if (!messages || !Array.isArray(messages)) {
-      return new Response(JSON.stringify({ error: "messages is required" }), {
+      return new Response(JSON.stringify({ error: "messages required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    const { squadhubUrl, squadhubToken } = getConnection(auth.tenant);
-
-    // Create OpenAI-compatible client pointing to squadhub gateway
-    const squadhub = createOpenAI({
-      baseURL: `${squadhubUrl}/v1`,
-      apiKey: squadhubToken,
+    const upstream = await fetch(`${CLAWE_API}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
     });
 
-    // Stream response using Vercel AI SDK
-    // Use .chat() to force Chat Completions API instead of Responses API
-    const result = streamText({
-      model: squadhub.chat("openclaw"),
-      messages,
+    if (!upstream.ok || !upstream.body) {
+      const err = await upstream.text();
+      return new Response(JSON.stringify({ error: `CLAWE API error: ${err}` }), {
+        status: upstream.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Stream SSE through from CLAWE API to the browser
+    // Convert CLAWE's SSE format (data: {"delta":"..."}) to Vercel AI SDK format
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+
+    (async () => {
+      const reader = upstream.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const payload = line.slice(6);
+            if (payload === "[DONE]") {
+              // Vercel AI SDK expects a specific finish format
+              await writer.write(encoder.encode('0:""\n'));
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(payload) as { delta?: string; error?: string };
+              if (parsed.error) {
+                await writer.write(encoder.encode(`3:${JSON.stringify(parsed.error)}\n`));
+              } else if (parsed.delta) {
+                // Vercel AI SDK text stream format: 0:"<escaped text>"\n
+                await writer.write(encoder.encode(`0:${JSON.stringify(parsed.delta)}\n`));
+              }
+            } catch { /* skip malformed */ }
+          }
+        }
+      } finally {
+        await writer.close().catch(() => {});
+      }
+    })();
+
+    return new Response(readable, {
       headers: {
-        "X-OpenClaw-Session-Key": sessionKey,
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Vercel-AI-Data-Stream": "v1",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
       },
     });
-
-    return result.toTextStreamResponse();
-  } catch (error) {
-    console.error("[chat] Error:", error);
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ error: errorMessage }), {
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });

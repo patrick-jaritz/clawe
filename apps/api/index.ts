@@ -847,8 +847,25 @@ app.get("/api/memory/entity/:entity", (req, res) => {
 });
 
 // In-memory cron cache — refreshed every 5 min in the background
-type CronEntry = { id: string; name: string; schedule: string; next: string; last: string; status: string; target: string; agent: string };
+type CronEntry = { id: string; name: string; schedule: string; next: string; last: string; status: string; target: string; agent: string; errorMsg?: string };
 let cronCache: { crons: CronEntry[]; total: number; updatedAt: number } = { crons: [], total: 0, updatedAt: 0 };
+
+/** Read last N lines of gateway.log and return map of cronId → latest error message */
+function readCronErrors(): Record<string, string> {
+  const LOG = path.join(process.env.HOME ?? "/Users/centrick", ".openclaw/logs/gateway.log");
+  const errors: Record<string, string> = {};
+  try {
+    const lines = execSync(`tail -500 "${LOG}" 2>/dev/null`, { encoding: "utf8", timeout: 3000 }).split("\n");
+    for (const line of lines) {
+      const m = line.match(/\[cron:([^\]]+)\]\s+(.+)/);
+      if (m) {
+        const [, id, msg] = m;
+        errors[id] = msg.trim(); // last occurrence wins
+      }
+    }
+  } catch { /* ignore */ }
+  return errors;
+}
 
 function parseCronTable(raw: string): CronEntry[] {
   const lines = raw.split("\n");
@@ -889,6 +906,13 @@ function refreshCronCache() {
     if (code === 0 || raw.includes("ID")) {
       const crons = parseCronTable(raw);
       if (crons.length > 0) {
+        // Enrich error crons with log-derived error messages
+        const cronErrors = readCronErrors();
+        for (const cron of crons) {
+          if (cron.status === "error") {
+            cron.errorMsg = cronErrors[cron.id] ?? cronErrors[cron.name] ?? "Unknown error";
+          }
+        }
         cronCache = { crons, total: crons.length, updatedAt: Date.now() };
         console.log(`[cron-cache] Refreshed: ${crons.length} crons`);
       }
@@ -1465,6 +1489,178 @@ app.post("/api/coordination/sync", express.json(), (req, res) => {
     res.json({ ok: true, file: `sync/${dateStr}-sync.md`, time: timeStr });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Business config  GET /api/business  POST /api/business
+// ---------------------------------------------------------------------------
+
+const BUSINESS_CONFIG_PATH = path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/config/business.json");
+const BUSINESS_DEFAULTS = {
+  name: "CENTAUR / Before You Leap",
+  url: "https://beforeyouleap.app",
+  description: "Help founders validate ideas before they build.",
+  industry: "AI / SaaS",
+  targetAudience: "Early-stage founders",
+  tone: "Direct, strategic, no-fluff",
+};
+
+app.get("/api/business", (_req, res) => {
+  try {
+    if (fs.existsSync(BUSINESS_CONFIG_PATH)) {
+      res.json(JSON.parse(fs.readFileSync(BUSINESS_CONFIG_PATH, "utf8")));
+    } else {
+      res.json(BUSINESS_DEFAULTS);
+    }
+  } catch { res.json(BUSINESS_DEFAULTS); }
+});
+
+app.post("/api/business", express.json(), (req, res) => {
+  try {
+    const dir = path.dirname(BUSINESS_CONFIG_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(BUSINESS_CONFIG_PATH, JSON.stringify(req.body, null, 2));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// ---------------------------------------------------------------------------
+// Integrations   GET /api/integrations
+// ---------------------------------------------------------------------------
+
+app.get("/api/integrations", (_req, res) => {
+  const HOME = process.env.HOME ?? "/Users/centrick";
+  const configRaw = (() => { try { return execSync("cat ~/.openclaw/openclaw.json", { encoding: "utf8" }).replace(/,(\s*[}\]])/g, "$1"); } catch { return "{}"; } })();
+  const cfg = (() => { try { return JSON.parse(configRaw) as Record<string, unknown>; } catch { return {} as Record<string, unknown>; } })();
+  const env = ((cfg.env as Record<string,unknown>)?.vars ?? {}) as Record<string, string>;
+
+  const integrations = [
+    {
+      id: "telegram",
+      name: "Telegram",
+      icon: "🤖",
+      category: "messaging",
+      status: env.TELEGRAM_BOT_TOKEN ? "connected" : "disconnected",
+      detail: env.TELEGRAM_BOT_TOKEN ? "Bot configured" : "No token",
+    },
+    {
+      id: "github",
+      name: "GitHub",
+      icon: "🐙",
+      category: "dev",
+      status: (() => { try { execSync("gh auth status 2>&1", { encoding: "utf8", timeout: 3000 }); return "connected"; } catch { return "disconnected"; } })(),
+      detail: (() => { try { return execSync("gh api user --jq .login 2>/dev/null", { encoding: "utf8", timeout: 3000 }).trim(); } catch { return "not authenticated"; } })(),
+    },
+    {
+      id: "notion",
+      name: "Notion",
+      icon: "📝",
+      category: "productivity",
+      status: env.NOTION_API_KEY ? "connected" : "disconnected",
+      detail: env.NOTION_API_KEY ? "API key set" : "No key",
+    },
+    {
+      id: "anthropic",
+      name: "Anthropic",
+      icon: "🤖",
+      category: "ai",
+      status: env.ANTHROPIC_API_KEY ? "connected" : "disconnected",
+      detail: env.ANTHROPIC_API_KEY ? `sk-ant-...${env.ANTHROPIC_API_KEY.slice(-4)}` : "No key",
+    },
+    {
+      id: "openai",
+      name: "OpenAI",
+      icon: "✨",
+      category: "ai",
+      status: env.OPENAI_API_KEY ? "connected" : "disconnected",
+      detail: env.OPENAI_API_KEY ? `sk-...${env.OPENAI_API_KEY.slice(-4)}` : "No key",
+    },
+    {
+      id: "brave",
+      name: "Brave Search",
+      icon: "🦁",
+      category: "search",
+      status: env.BRAVE_API_KEY ? "connected" : "disconnected",
+      detail: env.BRAVE_API_KEY ? "API key set" : "No key",
+    },
+    {
+      id: "tailscale",
+      name: "Tailscale",
+      icon: "🔒",
+      category: "network",
+      status: (() => { try { execSync("tailscale status --json 2>/dev/null", { encoding: "utf8", timeout: 3000 }); return "connected"; } catch { return "unknown"; } })(),
+      detail: "VPN mesh — dashboard access",
+    },
+    {
+      id: "google",
+      name: "Google",
+      icon: "🔍",
+      category: "productivity",
+      status: (() => {
+        const tokenPath = path.join(HOME, ".openclaw/plugins/gog/token.json");
+        return fs.existsSync(tokenPath) ? "connected" : "disconnected";
+      })(),
+      detail: (() => {
+        const tokenPath = path.join(HOME, ".openclaw/plugins/gog/token.json");
+        return fs.existsSync(tokenPath) ? "OAuth token present" : "Not configured";
+      })(),
+    },
+  ];
+
+  res.json({ integrations });
+});
+
+// ---------------------------------------------------------------------------
+// Chat  POST /api/chat  (streaming, CLAWE-aware)
+// ---------------------------------------------------------------------------
+
+app.post("/api/chat", express.json(), async (req, res) => {
+  const { messages } = req.body as { messages: Array<{ role: string; content: string }> };
+  if (!Array.isArray(messages)) { res.status(400).json({ error: "messages required" }); return; }
+
+  // Build CLAWE system context
+  const HOME = process.env.HOME ?? "/Users/centrick";
+  const aurelStatus = readJsonFile(path.join(HOME, "clawd/aurel/status/aurel.json"));
+  const sorenStatus = readJsonFile(path.join(HOME, "clawd/coordination/status/soren.json"));
+  const cronErrors = cronCache.crons.filter(c => c.status === "error").map(c => `${c.name}: ${c.errorMsg ?? "error"}`).slice(0, 5);
+
+  const systemPrompt = `You are Aurel, the Chief of Staff AI for CENTAUR / Before You Leap. You are answering questions about the CLAWE dashboard — the operational control centre for the CENTAUR AI team.
+
+Current context:
+- Aurel status: ${aurelStatus?.health ?? "unknown"}, active: ${JSON.stringify(aurelStatus?.active_tasks ?? [])}
+- Søren status: ${sorenStatus?.health ?? "unknown"}, active: ${JSON.stringify(sorenStatus?.active_tasks ?? [])}
+- Cron errors (${cronErrors.length}): ${cronErrors.join("; ") || "none"}
+- LanceDB: ${cronCache.crons.find(c => c.name?.includes("intel"))?.status === "ok" ? "ingesting" : "check status"}
+- DBA deadline: 3 papers due March 31 2026
+
+Answer questions about the dashboard, agents, crons, intelligence data, and CENTAUR operations. Be direct and concise. If asked to implement something, describe what you'd do and suggest using the Telegram chat for complex changes.`;
+
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  try {
+    const stream = await anthropic.messages.stream({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: messages as Array<{ role: "user" | "assistant"; content: string }>,
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+        res.write(`data: ${JSON.stringify({ delta: chunk.delta.text })}\n\n`);
+      }
+    }
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (e) {
+    res.write(`data: ${JSON.stringify({ error: String(e) })}\n\n`);
+    res.end();
   }
 });
 

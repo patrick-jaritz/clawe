@@ -13,7 +13,7 @@ import {
 import { Badge } from "@clawe/ui/components/badge";
 import { Button } from "@clawe/ui/components/button";
 import { Skeleton } from "@clawe/ui/components/skeleton";
-import { RefreshCw, Bot, Timer, MessageSquare, Users, Zap, XCircle } from "lucide-react";
+import { RefreshCw, Bot, Timer, MessageSquare, Users, Zap, XCircle, Circle, Info } from "lucide-react";
 import { useState, useMemo } from "react";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -58,6 +58,12 @@ function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1000).toFixed(0)}k`;
   return String(n);
+}
+
+// A session is "active" if updated within the last 30 minutes
+const ACTIVE_THRESHOLD_MS = 30 * 60 * 1000;
+function isActiveSession(updatedAt: number): boolean {
+  return Date.now() - updatedAt < ACTIVE_THRESHOLD_MS;
 }
 
 type Filter = "all" | "direct" | "group" | "cron" | "subagent";
@@ -135,11 +141,22 @@ export default function SessionsPage() {
         ))}
       </div>
 
+      {/* Explainer */}
+      <div className="flex items-start gap-2 rounded-lg border bg-muted/30 p-3 mb-4 text-xs text-muted-foreground">
+        <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+        <div className="space-y-1">
+          <p><span className="text-foreground font-medium">What you're seeing:</span> All sessions stored in sessions.json — current and historical. Sessions are never auto-deleted by OpenClaw.</p>
+          <p><span className="text-foreground font-medium">Active vs ceased:</span> 🟢 = updated within 30 min (currently running). ⚫ = finished or idle.</p>
+          <p><span className="text-foreground font-medium">Subagents:</span> One-shot tasks spawned to handle a specific job. They finish and stop. The same key can be reused if a new subagent with the same purpose is spawned — it will show as active again when it runs.</p>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="rounded-md border overflow-x-auto text-sm">
         <table className="w-full">
           <thead>
             <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+              <th className="px-3 py-2 text-left font-medium w-8"></th>
               <th className="px-3 py-2 text-left font-medium w-24">Kind</th>
               <th className="px-3 py-2 text-left font-medium">Session</th>
               <th className="px-3 py-2 text-left font-medium w-44">Model</th>
@@ -152,8 +169,15 @@ export default function SessionsPage() {
           <tbody>
             {filtered.map((s) => {
               const isMain = s.key === "agent:main:main";
+              const active = isActiveSession(s.updatedAt);
               return (
                 <tr key={s.key} className={`border-b last:border-0 hover:bg-muted/30 transition-colors ${isMain ? "bg-primary/5" : ""}`}>
+                  <td className="px-3 py-2 text-center">
+                    <Circle
+                      className={`w-2 h-2 inline ${active ? "fill-emerald-500 text-emerald-500" : "fill-muted-foreground/30 text-muted-foreground/30"}`}
+                      title={active ? "Active (updated < 30 min ago)" : "Ceased / idle"}
+                    />
+                  </td>
                   <td className="px-3 py-2"><KindBadge kind={s.kind} /></td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col gap-0.5">

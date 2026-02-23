@@ -118,6 +118,12 @@ const CronsPage = () => {
                       </span>
                     )}
                   </div>
+                  {isError && cron.errorMsg && (
+                    <div className="mt-2 flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded px-2 py-1.5">
+                      <span className="font-medium shrink-0">Error:</span>
+                      <span className="break-all">{cron.errorMsg}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>

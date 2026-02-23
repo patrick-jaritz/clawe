@@ -1,19 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@clawe/backend";
+import { useBusiness } from "@/lib/api/local";
 import { Button } from "@clawe/ui/components/button";
 import { Input } from "@clawe/ui/components/input";
 import { Label } from "@clawe/ui/components/label";
 import { Textarea } from "@clawe/ui/components/textarea";
-import { Spinner } from "@clawe/ui/components/spinner";
+import { Skeleton } from "@clawe/ui/components/skeleton";
 import { toast } from "sonner";
-import { Globe, Building2, Users, Palette } from "lucide-react";
+import { Globe, Building2, Users, Palette, Layers } from "lucide-react";
 
 export const BusinessSettingsForm = () => {
-  const businessContext = useQuery(api.businessContext.get, {});
-  const saveBusinessContext = useMutation(api.businessContext.save);
+  const { data, isLoading, mutate } = useBusiness();
 
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
@@ -24,45 +22,37 @@ export const BusinessSettingsForm = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Load existing business context
   useEffect(() => {
-    if (businessContext) {
-      setUrl(businessContext.url ?? "");
-      setName(businessContext.name ?? "");
-      setDescription(businessContext.description ?? "");
-      setIndustry(businessContext.metadata?.industry ?? "");
-      setTargetAudience(businessContext.metadata?.targetAudience ?? "");
-      setTone(businessContext.metadata?.tone ?? "");
+    if (data) {
+      setUrl(data.url ?? "");
+      setName(data.name ?? "");
+      setDescription(data.description ?? "");
+      setIndustry(data.industry ?? "");
+      setTargetAudience(data.targetAudience ?? "");
+      setTone(data.tone ?? "");
       setIsDirty(false);
     }
-  }, [businessContext]);
+  }, [data]);
 
-  const handleChange = (
-    setter: React.Dispatch<React.SetStateAction<string>>,
-  ) => {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handle = (setter: React.Dispatch<React.SetStateAction<string>>) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setter(e.target.value);
       setIsDirty(true);
     };
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isDirty || !url) return;
-
+    if (!isDirty) return;
     setIsSaving(true);
     try {
-      await saveBusinessContext({
-        url,
-        name: name || undefined,
-        description: description || undefined,
-        metadata: {
-          industry: industry || undefined,
-          targetAudience: targetAudience || undefined,
-          tone: tone || undefined,
-        },
+      const res = await fetch("/api/business", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, name, description, industry, targetAudience, tone }),
       });
+      if (!res.ok) throw new Error("Save failed");
       setIsDirty(false);
+      await mutate();
       toast.success("Business settings saved");
     } catch {
       toast.error("Failed to save business settings");
@@ -71,133 +61,71 @@ export const BusinessSettingsForm = () => {
     }
   };
 
-  // Loading state
-  if (businessContext === undefined) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <Spinner className="text-muted-foreground" />
+      <div className="space-y-6">
+        {[1,2,3,4].map(i => <div key={i} className="space-y-2"><Skeleton className="h-4 w-24" /><Skeleton className="h-10 w-full" /></div>)}
       </div>
     );
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      {/* Website URL - Primary field */}
+      <div>
+        <h3 className="text-lg font-medium">Business Context</h3>
+        <p className="text-muted-foreground text-sm mt-0.5">
+          Stored locally in ~/clawd/aurel/config/business.json. Used by agents as context for research and content.
+        </p>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="url" className="flex items-center gap-2">
-          <Globe className="h-4 w-4" />
-          Website URL
+          <Globe className="h-4 w-4" /> Website URL
         </Label>
-        <Input
-          id="url"
-          type="url"
-          value={url}
-          onChange={handleChange(setUrl)}
-          placeholder="https://yourwebsite.com"
-        />
-        <p className="text-muted-foreground text-sm">
-          Your business website. This helps agents understand your brand and
-          context.
-        </p>
+        <Input id="url" type="url" value={url} onChange={handle(setUrl)} placeholder="https://beforeyouleap.app" />
       </div>
 
-      {/* Business Name */}
       <div className="space-y-2">
         <Label htmlFor="name" className="flex items-center gap-2">
-          <Building2 className="h-4 w-4" />
-          Business Name
+          <Building2 className="h-4 w-4" /> Business Name
         </Label>
-        <Input
-          id="name"
-          value={name}
-          onChange={handleChange(setName)}
-          placeholder="Acme Inc"
-        />
-        <p className="text-muted-foreground text-sm">
-          The name of your business or brand.
-        </p>
+        <Input id="name" value={name} onChange={handle(setName)} placeholder="CENTAUR / Before You Leap" />
       </div>
 
-      {/* Description */}
       <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          value={description}
-          onChange={handleChange(setDescription)}
-          placeholder="Describe what your business does..."
-          rows={3}
-        />
-        <p className="text-muted-foreground text-sm">
-          A brief description of what your business does and its main offerings.
-        </p>
+        <Textarea id="description" value={description} onChange={handle(setDescription)}
+          placeholder="Describe what your business does…" rows={3} />
       </div>
 
-      {/* Metadata Section */}
-      <div className="border-t pt-6">
-        <h3 className="mb-4 text-sm font-medium">Additional Context</h3>
+      <div className="border-t pt-6 space-y-6">
+        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Agent Context</h3>
 
-        <div className="space-y-6">
-          {/* Industry */}
-          <div className="space-y-2">
-            <Label htmlFor="industry">Industry</Label>
-            <Input
-              id="industry"
-              value={industry}
-              onChange={handleChange(setIndustry)}
-              placeholder="e.g., E-commerce, SaaS, Healthcare"
-            />
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="industry" className="flex items-center gap-2">
+            <Layers className="h-4 w-4" /> Industry
+          </Label>
+          <Input id="industry" value={industry} onChange={handle(setIndustry)} placeholder="AI / SaaS" />
+        </div>
 
-          {/* Target Audience */}
-          <div className="space-y-2">
-            <Label htmlFor="targetAudience" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Target Audience
-            </Label>
-            <Input
-              id="targetAudience"
-              value={targetAudience}
-              onChange={handleChange(setTargetAudience)}
-              placeholder="e.g., Small business owners, Developers, Parents"
-            />
-            <p className="text-muted-foreground text-sm">
-              Who are your primary customers or users?
-            </p>
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="targetAudience" className="flex items-center gap-2">
+            <Users className="h-4 w-4" /> Target Audience
+          </Label>
+          <Input id="targetAudience" value={targetAudience} onChange={handle(setTargetAudience)}
+            placeholder="Early-stage founders" />
+        </div>
 
-          {/* Tone */}
-          <div className="space-y-2">
-            <Label htmlFor="tone" className="flex items-center gap-2">
-              <Palette className="h-4 w-4" />
-              Brand Tone
-            </Label>
-            <Input
-              id="tone"
-              value={tone}
-              onChange={handleChange(setTone)}
-              placeholder="e.g., Professional, Friendly, Playful, Technical"
-            />
-            <p className="text-muted-foreground text-sm">
-              The tone and style that best represents your brand voice.
-            </p>
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="tone" className="flex items-center gap-2">
+            <Palette className="h-4 w-4" /> Brand Tone
+          </Label>
+          <Input id="tone" value={tone} onChange={handle(setTone)} placeholder="Direct, strategic, no-fluff" />
         </div>
       </div>
 
-      <Button
-        type="submit"
-        variant="brand"
-        disabled={!isDirty || !url || isSaving}
-      >
-        {isSaving ? (
-          <>
-            <Spinner />
-            Saving...
-          </>
-        ) : (
-          "Save changes"
-        )}
+      <Button type="submit" disabled={!isDirty || isSaving}>
+        {isSaving ? "Saving…" : "Save changes"}
       </Button>
     </form>
   );

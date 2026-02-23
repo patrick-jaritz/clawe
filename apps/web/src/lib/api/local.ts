@@ -554,6 +554,7 @@ export type CronJob = {
   id: string;
   name: string;
   schedule: string;
+  errorMsg?: string;
   next: string;
   last: string;
   status: string;
@@ -723,4 +724,16 @@ export function useCoordFile(relPath: string | null) {
     relPath ? `/api/coordination/file?path=${encodeURIComponent(relPath)}` : null,
     fetcher
   );
+}
+
+// Business config
+export interface BusinessConfig { name: string; url: string; description: string; industry: string; targetAudience: string; tone: string; }
+export function useBusiness() {
+  return useSWR<BusinessConfig>("/api/business", fetcher);
+}
+
+// Integrations
+export interface Integration { id: string; name: string; icon: string; category: string; status: "connected" | "disconnected" | "unknown"; detail: string; }
+export function useIntegrations() {
+  return useSWR<{ integrations: Integration[] }>("/api/integrations", fetcher, { refreshInterval: 2 * 60 * 1000 });
 }
