@@ -531,6 +531,103 @@ app.get("/api/activities", (_req, res) => {
 // GET /api/crons — list all OpenClaw cron jobs
 // ---------------------------------------------------------------------------
 
+// ── Read-only share token ───────────────────────────────────────────────────
+const SHARE_TOKEN_PATH = path.join(process.env.HOME ?? "/Users/centrick", ".clawe", "share-token.json");
+
+function loadShareToken(): string | null {
+  try {
+    if (fs.existsSync(SHARE_TOKEN_PATH)) {
+      return (JSON.parse(fs.readFileSync(SHARE_TOKEN_PATH, "utf8")) as { token: string }).token;
+    }
+  } catch { /* silent */ }
+  return null;
+}
+
+function saveShareToken(token: string): void {
+  const dir = path.dirname(SHARE_TOKEN_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(SHARE_TOKEN_PATH, JSON.stringify({ token, createdAt: new Date().toISOString() }, null, 2));
+}
+
+app.get("/api/share/token", (_req, res) => {
+  const token = loadShareToken();
+  if (!token) { res.json({ token: null }); return; }
+  res.json({ token });
+});
+
+app.post("/api/share/token", (_req, res) => {
+  const token = Array.from({ length: 32 }, () => Math.random().toString(36)[2]).join("");
+  saveShareToken(token);
+  res.json({ token });
+});
+
+app.delete("/api/share/token", (_req, res) => {
+  try { if (fs.existsSync(SHARE_TOKEN_PATH)) fs.unlinkSync(SHARE_TOKEN_PATH); } catch { /* ok */ }
+  res.json({ revoked: true });
+});
+
+// Validate share token (used by share page)
+app.get("/api/share/validate", (req, res) => {
+  const { token } = req.query as { token?: string };
+  const stored = loadShareToken();
+  if (!stored || !token || token !== stored) {
+    res.status(401).json({ valid: false });
+    return;
+  }
+  res.json({ valid: true });
+});
+
+// Public share snapshot (accessible with valid token)
+app.get("/api/share/snapshot", async (req, res) => {
+  const { token } = req.query as { token?: string };
+  const stored = loadShareToken();
+  if (!stored || !token || token !== stored) {
+    res.status(401).json({ error: "Invalid token" });
+    return;
+  }
+  try {
+    // Gather: running projects, system health, quick agent status
+    const projectsRaw = execSync(
+      `node -e "const s=require('/Users/centrick/.openclaw/workspace/../../../clawd/repos/clawe/apps/api/state/process-state.json'); console.log(JSON.stringify(s))" 2>/dev/null`,
+      { encoding: "utf8", timeout: 3000 }
+    );
+    res.json({
+      ts: new Date().toISOString(),
+      note: "Read-only CLAWE snapshot",
+    });
+  } catch {
+    res.json({ ts: new Date().toISOString(), note: "Snapshot available" });
+  }
+});
+
+// Tailscale device list
+app.get("/api/tailscale/status", (_req, res) => {
+  try {
+    const raw = execSync("tailscale status --json 2>/dev/null", { encoding: "utf8", timeout: 6000 });
+    const data = JSON.parse(raw);
+    const self = data.Self ?? {};
+    const peers = Object.values(data.Peers ?? {}) as Record<string, unknown>[];
+
+    const mapDevice = (d: Record<string, unknown>, isSelf = false) => ({
+      id: d.ID ?? d.PublicKey ?? "",
+      name: ((d.HostName as string) ?? (d.DNSName as string) ?? "").replace(/\.$/, ""),
+      ip: Array.isArray(d.TailscaleIPs) ? (d.TailscaleIPs as string[])[0] ?? "" : "",
+      os: d.OS ?? "",
+      online: isSelf ? true : (d.Online ?? false),
+      lastSeen: d.LastSeen ?? null,
+      relay: d.Relay ?? "",
+      isSelf,
+    });
+
+    res.json({
+      self: mapDevice(self, true),
+      peers: peers.map((p) => mapDevice(p as Record<string, unknown>)),
+    });
+  } catch {
+    res.status(503).json({ error: "tailscale not available" });
+  }
+});
+
 // Memory system query endpoint
 const MEMORY_CLI = "/Users/centrick/clawd/aurel/memory-system/cli.js";
 

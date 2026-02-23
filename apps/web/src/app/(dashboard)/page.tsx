@@ -38,12 +38,15 @@ import {
   Database,
   Globe,
   Plus,
+  Wifi,
+  WifiOff,
   type LucideIcon,
 } from "lucide-react";
 import {
   ALL_QUICK_ACTIONS,
   getEnabledActionIds,
 } from "@/lib/quick-actions-config";
+import { useTailscaleStatus } from "@/lib/api/local";
 import {
   useSystemHealth,
   useRecentIntel,
@@ -121,6 +124,60 @@ function getDeadlineBg(days: number): string {
   if (days <= 14) return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
   if (days <= 30) return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
   return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
+}
+
+// ── Tailscale Widget ───────────────────────────────────────────────────────
+
+function TailscaleWidget() {
+  const { data, error } = useTailscaleStatus();
+
+  if (error || !data) return null; // Silent fail if tailscale not available
+
+  const allDevices = data.self ? [data.self, ...data.peers] : data.peers;
+  const online = allDevices.filter((d) => d.online);
+  const offline = allDevices.filter((d) => !d.online);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Wifi className="h-4 w-4 text-green-500" />
+            Tailscale Network
+          </CardTitle>
+          <Badge variant="secondary" className="text-xs">
+            {online.length}/{allDevices.length} online
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-1.5">
+          {allDevices.map((d) => (
+            <div key={d.id || d.name} className="flex items-center gap-2 text-sm">
+              {d.online ? (
+                <Wifi className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+              ) : (
+                <WifiOff className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              )}
+              <span className={cn("flex-1 truncate", !d.online && "text-muted-foreground")}>
+                {d.name || "unnamed"}
+                {d.isSelf && <span className="ml-1 text-xs text-muted-foreground">(this device)</span>}
+              </span>
+              <span className="font-mono text-xs text-muted-foreground">{d.ip}</span>
+              {d.os && (
+                <span className="text-xs text-muted-foreground hidden sm:inline">{d.os}</span>
+              )}
+            </div>
+          ))}
+          {offline.length > 0 && online.length > 0 && (
+            <p className="text-xs text-muted-foreground pt-1">
+              {offline.length} device{offline.length !== 1 ? "s" : ""} offline
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 // ── Icon map for quick actions ─────────────────────────────────────────────
@@ -690,6 +747,9 @@ export default function HomePage() {
 
       {/* Quick Actions */}
       <ConfigurableQuickActions hostname={hostname} />
+
+      {/* Tailscale Network */}
+      <TailscaleWidget />
     </div>
   );
 }

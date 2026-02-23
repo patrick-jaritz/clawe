@@ -51,7 +51,26 @@ import {
   Send,
   CornerDownLeft,
   Sparkles,
+  Star,
+  Trash2,
 } from "lucide-react";
+
+// ── Saved Searches ─────────────────────────────────────────────────────────
+
+const SAVED_KEY = "clawe-intel-saved-searches";
+
+function getSaved(): string[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(SAVED_KEY) || "[]"); } catch { return []; }
+}
+
+function toggleSaved(q: string): boolean {
+  const saved = getSaved();
+  const idx = saved.indexOf(q);
+  const next = idx !== -1 ? saved.filter((s) => s !== q) : [q, ...saved].slice(0, 20);
+  localStorage.setItem(SAVED_KEY, JSON.stringify(next));
+  return idx === -1; // returns true if now saved
+}
 import { cn } from "@clawe/ui/lib/utils";
 
 const sourceIcons: Record<string, string> = {
@@ -135,9 +154,25 @@ const AskMode = () => {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [activeSources, setActiveSources] = useState<IntelSource[]>([]);
+  const [savedSearches, setSavedSearches] = useState<string[]>([]);
   const abortRef = useRef<(() => void) | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load saved searches on mount
+  useEffect(() => {
+    setSavedSearches(getSaved());
+  }, []);
+
+  const handleToggleSave = (q: string) => {
+    toggleSaved(q);
+    setSavedSearches(getSaved());
+  };
+
+  const runSaved = (q: string) => {
+    setInput(q);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -242,7 +277,7 @@ const AskMode = () => {
             <div
               key={msg.id}
               className={cn(
-                "flex gap-3",
+                "flex gap-3 group",
                 msg.role === "user" && "flex-row-reverse"
               )}
             >
@@ -265,6 +300,22 @@ const AskMode = () => {
                   <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-current" />
                 )}
               </div>
+              {msg.role === "user" && (
+                <button
+                  onClick={() => handleToggleSave(msg.content)}
+                  title={savedSearches.includes(msg.content) ? "Remove bookmark" : "Bookmark query"}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity self-center"
+                >
+                  <Star
+                    className={cn(
+                      "h-4 w-4",
+                      savedSearches.includes(msg.content)
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "text-muted-foreground hover:text-yellow-400"
+                    )}
+                  />
+                </button>
+              )}
             </div>
           ))}
           <div ref={bottomRef} />
@@ -297,8 +348,37 @@ const AskMode = () => {
         </div>
       </div>
 
-      {/* Sources panel */}
-      <div className="hidden w-72 flex-shrink-0 lg:flex flex-col rounded-lg border">
+      {/* Sources + Saved panel */}
+      <div className="hidden w-72 flex-shrink-0 lg:flex flex-col rounded-lg border overflow-hidden">
+        {/* Saved searches */}
+        {savedSearches.length > 0 && (
+          <div className="border-b">
+            <div className="flex items-center gap-1.5 p-3 pb-2">
+              <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+              <p className="text-xs font-medium">Saved Searches</p>
+            </div>
+            <div className="px-2 pb-2 space-y-1">
+              {savedSearches.map((q) => (
+                <div key={q} className="flex items-center gap-1 group">
+                  <button
+                    onClick={() => runSaved(q)}
+                    className="flex-1 rounded px-2 py-1 text-left text-xs hover:bg-muted transition-colors truncate"
+                  >
+                    {q}
+                  </button>
+                  <button
+                    onClick={() => handleToggleSave(q)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                  >
+                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Sources */}
         <div className="border-b p-3">
           <p className="text-sm font-medium">Sources</p>
           <p className="text-xs text-muted-foreground">Chunks used in last answer</p>

@@ -10,21 +10,59 @@ import {
 } from "@dashboard/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@clawe/ui/components/card";
 import { Button } from "@clawe/ui/components/button";
+import { Input } from "@clawe/ui/components/input";
 import {
   ALL_QUICK_ACTIONS,
   getEnabledActionIds,
   setEnabledActionIds,
 } from "@/lib/quick-actions-config";
+import {
+  useShareToken,
+  generateShareToken,
+  revokeShareToken,
+} from "@/lib/api/local";
 import { cn } from "@clawe/ui/lib/utils";
-import { Check } from "lucide-react";
+import { Check, Copy, RefreshCw, Trash2, ExternalLink } from "lucide-react";
+import { mutate } from "swr";
 
 const DashboardSettingsPage = () => {
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const { data: shareData } = useShareToken();
+  const shareToken = shareData?.token ?? null;
 
   useEffect(() => {
     setEnabled(getEnabledActionIds());
   }, []);
+
+  const shareUrl = shareToken
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/share?token=${shareToken}`
+    : null;
+
+  const handleCopy = () => {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleGenerate = async () => {
+    setTokenLoading(true);
+    try {
+      await generateShareToken();
+      mutate("/api/share/token");
+    } finally { setTokenLoading(false); }
+  };
+
+  const handleRevoke = async () => {
+    setTokenLoading(true);
+    try {
+      await revokeShareToken();
+      mutate("/api/share/token");
+    } finally { setTokenLoading(false); }
+  };
 
   const toggle = (id: string) => {
     setEnabled((prev) => {
@@ -57,6 +95,47 @@ const DashboardSettingsPage = () => {
       </PageHeader>
 
       <div className="max-w-2xl space-y-6">
+        {/* Read-only Share URL */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Read-only Share URL</CardTitle>
+            <CardDescription>
+              Share a read-only view of your CLAWE dashboard (running projects + intel brief) with anyone on your Tailscale network or locally.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {shareUrl ? (
+              <>
+                <div className="flex gap-2">
+                  <Input readOnly value={shareUrl} className="font-mono text-xs" />
+                  <Button size="sm" variant="outline" onClick={handleCopy}>
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                  <Button size="sm" variant="outline" asChild>
+                    <a href={shareUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={handleGenerate} disabled={tokenLoading}>
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                    Regenerate
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={handleRevoke} disabled={tokenLoading}>
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    Revoke
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <Button size="sm" onClick={handleGenerate} disabled={tokenLoading}>
+                {tokenLoading ? "Generating..." : "Generate share link"}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>

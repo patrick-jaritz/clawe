@@ -291,6 +291,52 @@ export function useMemoryDecisions() {
   });
 }
 
+// ── Tailscale ─────────────────────────────────────────────────────────────────
+
+export type TailscaleDevice = {
+  id: string;
+  name: string;
+  ip: string;
+  os: string;
+  online: boolean;
+  lastSeen: string | null;
+  relay: string;
+  isSelf: boolean;
+};
+
+export type TailscaleStatus = {
+  self: TailscaleDevice;
+  peers: TailscaleDevice[];
+};
+
+export function useTailscaleStatus() {
+  return useSWR<TailscaleStatus>("/api/tailscale/status", fetcher, {
+    refreshInterval: 60_000,
+    revalidateOnFocus: false,
+  });
+}
+
+// ── Share token ───────────────────────────────────────────────────────────────
+
+export type ShareTokenResult = { token: string | null };
+
+export function useShareToken() {
+  return useSWR<ShareTokenResult>("/api/share/token", fetcher, {
+    revalidateOnFocus: false,
+  });
+}
+
+export async function generateShareToken(): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/share/token`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to generate token");
+  const data = await res.json() as { token: string };
+  return data.token;
+}
+
+export async function revokeShareToken(): Promise<void> {
+  await fetch(`${API_BASE}/api/share/token`, { method: "DELETE" });
+}
+
 export type SystemHealth = {
   services: {
     api: { ok: boolean; label: string };
