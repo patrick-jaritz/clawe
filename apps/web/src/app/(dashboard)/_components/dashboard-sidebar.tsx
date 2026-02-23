@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer, Database, GraduationCap, BarChart2 } from "lucide-react";
+import { Home, SquareKanban, Bot, Brain, LayoutGrid, Settings, Timer, Database, GraduationCap, BarChart2, Puzzle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { NavMain, type NavItem } from "./nav-main";
@@ -80,6 +80,11 @@ const SidebarNavContent = () => {
       title: "Memory",
       url: "/memory",
       icon: Database,
+    },
+    {
+      title: "Skills",
+      url: "/skills",
+      icon: Puzzle,
     },
     {
       title: "DBA Papers",

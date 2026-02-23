@@ -1034,6 +1034,144 @@ app.get("/api/notifications", async (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// FEATURE 1: Skills API
+// ---------------------------------------------------------------------------
+
+const BUILTIN_SKILLS_DIR = path.join(process.env.HOME ?? "/Users/centrick", ".nvm/versions/node/v22.22.0/lib/node_modules/openclaw/skills");
+const USER_SKILLS_DIR = path.join(process.env.HOME ?? "/Users/centrick", ".openclaw/skills");
+
+interface SkillEntry {
+  id: string; name: string; description: string; emoji: string;
+  installed: boolean; builtin: boolean; requires: string[]; location: string;
+}
+
+app.get("/api/skills", (_req, res) => {
+  const skills: SkillEntry[] = [];
+  const userInstalled = new Set(fs.existsSync(USER_SKILLS_DIR) ? fs.readdirSync(USER_SKILLS_DIR) : []);
+
+  if (fs.existsSync(BUILTIN_SKILLS_DIR)) {
+    for (const entry of fs.readdirSync(BUILTIN_SKILLS_DIR, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const skillPath = path.join(BUILTIN_SKILLS_DIR, entry.name);
+      const skillMdPath = path.join(skillPath, "SKILL.md");
+      if (!fs.existsSync(skillMdPath)) continue;
+      const content = fs.readFileSync(skillMdPath, "utf8");
+      const nameM = content.match(/^name:\s*(.+)/m);
+      const descM = content.match(/^description:\s*["']([\s\S]*?)["']\s*\n/m) ?? content.match(/^description:\s*(.+)/m);
+      const emojiM = content.match(/"emoji":\s*"([^"]+)"/);
+      const binsM = content.match(/"bins":\s*\[([^\]]+)\]/);
+      const requires = binsM ? binsM[1].split(",").map((b: string) => b.trim().replace(/"/g,"")) : [];
+      skills.push({
+        id: entry.name,
+        name: nameM ? nameM[1].trim() : entry.name,
+        description: descM ? descM[1].trim().slice(0, 200) : "",
+        emoji: emojiM ? emojiM[1] : "🔧",
+        installed: userInstalled.has(entry.name),
+        builtin: true,
+        requires,
+        location: skillPath,
+      });
+    }
+  }
+  for (const name of userInstalled) {
+    if (skills.find(s => s.id === name)) continue;
+    const skillPath = path.join(USER_SKILLS_DIR, name);
+    const skillMdPath = path.join(skillPath, "SKILL.md");
+    if (!fs.existsSync(skillMdPath)) continue;
+    const content = fs.readFileSync(skillMdPath, "utf8");
+    const nameM = content.match(/^name:\s*(.+)/m);
+    const descM = content.match(/^description:\s*["']([\s\S]*?)["']\s*\n/m) ?? content.match(/^description:\s*(.+)/m);
+    const emojiM = content.match(/"emoji":\s*"([^"]+)"/);
+    skills.push({ id: name, name: nameM?.[1].trim() ?? name, description: descM?.[1].trim().slice(0,200) ?? "", emoji: emojiM?.[1] ?? "🔧", installed: true, builtin: false, requires: [], location: skillPath });
+  }
+  skills.sort((a, b) => a.name.localeCompare(b.name));
+  res.json({ skills, total: skills.length });
+});
+
+app.post("/api/agents/:agentId/heartbeat", (req, res) => {
+  const { agentId } = req.params;
+  if (!["soren", "aurel"].includes(agentId)) { res.status(403).json({ error: "Unknown agent" }); return; }
+  const statusPath = agentId === "soren"
+    ? path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json")
+    : path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json");
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const data = { ...body, agent: agentId, timestamp: new Date().toISOString(), health: body.health ?? "green" };
+  fs.writeFileSync(statusPath, JSON.stringify(data, null, 2));
+  res.json({ ok: true, agent: agentId, updatedAt: data.timestamp });
+});
+
+// ---------------------------------------------------------------------------
+// FEATURE 2: API Key Vault
+// ---------------------------------------------------------------------------
+
+app.get("/api/settings/keys", (_req, res) => {
+  try {
+    const raw = execSync("cat ~/.openclaw/openclaw.json", { encoding: "utf8" }).replace(/,(\s*[}\]])/g, "$1");
+    const config = JSON.parse(raw) as Record<string, unknown>;
+    const vars = ((config.env as Record<string, unknown>)?.vars ?? {}) as Record<string, string>;
+    const keys = Object.entries(vars).map(([name, value]) => ({
+      name,
+      masked: typeof value === "string" && value.length > 8 ? "x".repeat(value.length - 4) + value.slice(-4) : "••••",
+      set: Boolean(value),
+    }));
+    res.json({ keys });
+  } catch { res.status(500).json({ error: "Failed to read keys" }); }
+});
+
+app.put("/api/settings/keys/:name", (req, res) => {
+  const { name } = req.params;
+  const { value } = req.body as { value: string };
+  if (!value || typeof value !== "string") { res.status(400).json({ error: "value required" }); return; }
+  if (!/^[A-Z_][A-Z0-9_]+$/.test(name)) { res.status(400).json({ error: "Invalid key name" }); return; }
+  try {
+    const configPath = path.join(process.env.HOME ?? "/Users/centrick", ".openclaw/openclaw.json");
+    const raw = fs.readFileSync(configPath, "utf8");
+    const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const updated = raw.replace(new RegExp(`("${name}"\\s*:\\s*)"[^"]*"`), `$1"${escaped}"`);
+    if (updated === raw) { res.status(404).json({ error: "Key not found in config" }); return; }
+    fs.writeFileSync(configPath, updated);
+    res.json({ ok: true, name, updated: true });
+  } catch { res.status(500).json({ error: "Failed to update key" }); }
+});
+
+// ---------------------------------------------------------------------------
+// FEATURE 3: Model Selector
+// ---------------------------------------------------------------------------
+
+app.get("/api/settings/models", (_req, res) => {
+  try {
+    const raw = execSync("cat ~/.openclaw/openclaw.json", { encoding: "utf8" }).replace(/,(\s*[}\]])/g, "$1");
+    const config = JSON.parse(raw) as Record<string, unknown>;
+    const providers = (((config.models as Record<string,unknown>)?.providers) ?? {}) as Record<string, { models?: Array<{ id: string; name?: string; reasoning?: boolean }> }>;
+    const models: Array<{ id: string; name: string; provider: string; reasoning: boolean }> = [];
+    for (const [provider, pv] of Object.entries(providers)) {
+      for (const m of (pv.models ?? [])) {
+        models.push({ id: m.id, name: m.name ?? m.id, provider, reasoning: m.reasoning ?? false });
+      }
+    }
+    const prefsPath = path.join(process.env.HOME ?? "/Users/centrick", ".openclaw/clawe-prefs.json");
+    let preferred: string | null = null;
+    if (fs.existsSync(prefsPath)) {
+      try { preferred = (JSON.parse(fs.readFileSync(prefsPath, "utf8")) as Record<string, string>).defaultModel ?? null; } catch { /* ok */ }
+    }
+    res.json({ models, preferred, total: models.length });
+  } catch { res.status(500).json({ error: "Failed to read models" }); }
+});
+
+app.put("/api/settings/models/preferred", (req, res) => {
+  const { modelId } = req.body as { modelId: string };
+  if (!modelId || typeof modelId !== "string") { res.status(400).json({ error: "modelId required" }); return; }
+  const prefsPath = path.join(process.env.HOME ?? "/Users/centrick", ".openclaw/clawe-prefs.json");
+  let prefs: Record<string, unknown> = {};
+  if (fs.existsSync(prefsPath)) {
+    try { prefs = JSON.parse(fs.readFileSync(prefsPath, "utf8")) as Record<string, unknown>; } catch { /* ok */ }
+  }
+  prefs.defaultModel = modelId;
+  fs.writeFileSync(prefsPath, JSON.stringify(prefs, null, 2));
+  res.json({ ok: true, defaultModel: modelId });
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 

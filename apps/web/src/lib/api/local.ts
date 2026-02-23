@@ -598,3 +598,65 @@ export async function createNotionTask(title: string, status: string): Promise<{
   if (!res.ok) throw new Error("Failed to create task");
   return res.json() as Promise<{ id: string }>;
 }
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+
+export interface SkillEntry {
+  id: string; name: string; description: string; emoji: string;
+  installed: boolean; builtin: boolean; requires: string[]; location: string;
+}
+
+export function useSkills() {
+  return useSWR<{ skills: SkillEntry[]; total: number }>("/api/skills", fetcher, { refreshInterval: 60000 });
+}
+
+// ── API Keys ──────────────────────────────────────────────────────────────────
+
+export interface APIKey {
+  name: string;
+  masked: string;
+  set: boolean;
+}
+
+export function useAPIKeys() {
+  return useSWR<{ keys: APIKey[] }>("/api/settings/keys", fetcher, { revalidateOnFocus: false });
+}
+
+export async function updateAPIKey(name: string, value: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/settings/keys/${name}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  if (!res.ok) throw new Error("Failed to update key");
+  return res.json() as Promise<{ ok: boolean }>;
+}
+
+// ── Models ────────────────────────────────────────────────────────────────────
+
+export interface Model {
+  id: string;
+  name: string;
+  provider: string;
+  reasoning: boolean;
+}
+
+export interface ModelsResponse {
+  models: Model[];
+  preferred: string | null;
+  total: number;
+}
+
+export function useModels() {
+  return useSWR<ModelsResponse>("/api/settings/models", fetcher, { revalidateOnFocus: false });
+}
+
+export async function setPreferredModel(modelId: string): Promise<{ ok: boolean }> {
+  const res = await fetch("/api/settings/models/preferred", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ modelId }),
+  });
+  if (!res.ok) throw new Error("Failed to set preferred model");
+  return res.json() as Promise<{ ok: boolean }>;
+}
