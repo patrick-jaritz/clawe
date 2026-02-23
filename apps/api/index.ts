@@ -21,10 +21,10 @@ const PORT = 3001;
 
 function getNotionKey(): string | null {
   try {
-    const cfg = JSON.parse(
-      execSync("cat ~/.openclaw/openclaw.json", { encoding: "utf8" }),
-    );
-    return cfg.env?.vars?.NOTION_API_KEY ?? null;
+    const raw = execSync("cat ~/.openclaw/openclaw.json", { encoding: "utf8" })
+      .replace(/,(\s*[}\]])/g, "$1");
+    const cfg = JSON.parse(raw) as Record<string, unknown>;
+    return ((cfg.env as Record<string, unknown>)?.vars as Record<string, string>)?.NOTION_API_KEY ?? null;
   } catch {
     return null;
   }
@@ -2226,7 +2226,7 @@ app.get("/api/repos/resources", (_req, res) => {
 
 app.post("/api/admin/deploy", express.json(), (req, res) => {
   const { restart = false } = (req.body ?? {}) as { restart?: boolean };
-  const cwd = path.join(process.env.HOME ?? "/Users/centrick", "clawd/clawe");
+  const cwd = path.join(process.env.HOME ?? "/Users/centrick", "clawd/repos/clawe");
 
   try {
     const pull = execSync("git pull origin main 2>&1", { cwd, encoding: "utf8", timeout: 30000 });

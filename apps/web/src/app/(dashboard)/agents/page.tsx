@@ -71,6 +71,8 @@ function timeAgo(ms: number | null): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+const formatLastSeen = timeAgo;
+
 const MODEL_COLORS: Record<string, string> = {
   "claude-sonnet-4-6": "text-orange-600 dark:text-orange-400",
   "claude-opus-4-6": "text-red-600 dark:text-red-400",
@@ -87,7 +89,7 @@ function healthDot(health: string) {
 // ─── Agent Card ───────────────────────────────────────────────────────────────
 
 function AgentCard({ agent, onClick }: { agent: Agent; onClick: () => void }) {
-  const status = deriveStatus(agent);
+  const status = deriveStatus({ ...agent, lastHeartbeat: agent.lastHeartbeat ?? undefined });
   const isOnline = status === "online";
 
   return (
@@ -213,6 +215,27 @@ const healthDotColors: Record<string, string> = {
   offline: "bg-gray-400",
 };
 
+const statusConfig: Record<string, { label: string; bgColor: string; textColor: string; dotColor: string }> = {
+  online: {
+    label: "Online",
+    bgColor: "bg-emerald-100 dark:bg-emerald-900/30",
+    textColor: "text-emerald-800 dark:text-emerald-300",
+    dotColor: "bg-emerald-500",
+  },
+  idle: {
+    label: "Idle",
+    bgColor: "bg-amber-100 dark:bg-amber-900/30",
+    textColor: "text-amber-800 dark:text-amber-300",
+    dotColor: "bg-amber-400",
+  },
+  offline: {
+    label: "Offline",
+    bgColor: "bg-gray-100 dark:bg-gray-800",
+    textColor: "text-gray-600 dark:text-gray-400",
+    dotColor: "bg-gray-400",
+  },
+};
+
 const AgentsPage = () => {
   const { data: agents } = useAgents();
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -244,8 +267,8 @@ const AgentsPage = () => {
           ) : (
             <div className="flex flex-wrap gap-4">
               {agents.map((agent) => {
-                const status = deriveStatus(agent);
-                const config = statusConfig[status] ?? statusConfig.offline;
+                const status = deriveStatus({ ...agent, lastHeartbeat: agent.lastHeartbeat ?? undefined });
+                const config = (statusConfig[status] ?? statusConfig.offline)!;
                 const healthDot = healthDotColors[agent.health ?? status] ?? healthDotColors.offline;
                 const hasBlockers = (agent.blockers?.length ?? 0) > 0;
                 const hasAttention = agent.needsAttention && (

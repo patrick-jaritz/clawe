@@ -179,7 +179,7 @@ export default function SessionsPage() {
                   <td className="px-3 py-2 text-center">
                     <Circle
                       className={`w-2 h-2 inline ${active ? "fill-emerald-500 text-emerald-500" : "fill-muted-foreground/30 text-muted-foreground/30"}`}
-                      title={active ? "Active (updated < 30 min ago)" : "Ceased / idle"}
+                      aria-label={active ? "Active (updated < 30 min ago)" : "Ceased / idle"}
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -217,7 +217,7 @@ export default function SessionsPage() {
                   <td className="px-3 py-2 text-right font-mono text-xs">{fmt(s.inputTokens)}</td>
                   <td className="px-3 py-2 text-right font-mono text-xs">{fmt(s.outputTokens)}</td>
                   <td className="px-3 py-2 text-center">
-                    {s.aborted && <XCircle className="w-4 h-4 text-red-500 inline" title="Aborted" />}
+                    {s.aborted && <XCircle className="w-4 h-4 text-red-500 inline" aria-label="Aborted" />}
                   </td>
                 </tr>
               );

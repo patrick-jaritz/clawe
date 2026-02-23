@@ -37,7 +37,7 @@ export const WeeklyRoutineGrid = () => {
     for (const day of DAYS) {
       const entries = routine[day] ?? [];
       if (entries.length > 0) {
-        routines[day].push({ agent: agent.name, emoji: agent.emoji, entries });
+        (routines[day] ??= []).push({ agent: agent.name, emoji: agent.emoji, entries });
       }
     }
   }

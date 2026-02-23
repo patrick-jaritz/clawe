@@ -18,8 +18,7 @@ export const ModelSelector = () => {
     if (!data?.models) return {};
     const groups: Record<string, typeof data.models> = {};
     for (const model of data.models) {
-      if (!groups[model.provider]) groups[model.provider] = [];
-      groups[model.provider].push(model);
+      (groups[model.provider] ??= []).push(model);
     }
     return groups;
   }, [data?.models]);
