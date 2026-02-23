@@ -40,13 +40,14 @@ import {
   Plus,
   Wifi,
   WifiOff,
+  GraduationCap,
   type LucideIcon,
 } from "lucide-react";
 import {
   ALL_QUICK_ACTIONS,
   getEnabledActionIds,
 } from "@/lib/quick-actions-config";
-import { useTailscaleStatus } from "@/lib/api/local";
+import { useTailscaleStatus, useDBAProgress } from "@/lib/api/local";
 import {
   useSystemHealth,
   useRecentIntel,
@@ -124,6 +125,46 @@ function getDeadlineBg(days: number): string {
   if (days <= 14) return "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30";
   if (days <= 30) return "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30";
   return "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30";
+}
+
+// ── DBA Countdown Widget ───────────────────────────────────────────────────
+
+function DBACountdownWidget() {
+  const { data } = useDBAProgress();
+  if (!data) return null;
+
+  const deadline = data.papers[0]?.deadline ?? "2026-03-31";
+  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const total = data.papers.reduce((s, p) => s + p.sections.length, 0);
+  const done = data.papers.reduce((s, p) => s + p.sections.filter((x) => x.done).length, 0);
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const urgencyColor = days <= 14 ? "text-destructive border-destructive/40 bg-destructive/5"
+    : days <= 30 ? "text-orange-500 border-orange-400/40 bg-orange-50/30 dark:bg-orange-950/20"
+    : "text-foreground";
+
+  return (
+    <Link href="/dba">
+      <Card className={cn("p-4 hover:shadow-md transition-shadow cursor-pointer", urgencyColor)}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="h-5 w-5" />
+            <div>
+              <p className="text-sm font-semibold">DBA Papers</p>
+              <p className="text-xs text-muted-foreground">3 papers · due {new Date(deadline).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-bold">{days}d</p>
+            <p className="text-xs text-muted-foreground">{pct}% done</p>
+          </div>
+        </div>
+        <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+          <div className="h-full bg-current rounded-full transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      </Card>
+    </Link>
+  );
 }
 
 // ── Tailscale Widget ───────────────────────────────────────────────────────
@@ -747,6 +788,9 @@ export default function HomePage() {
 
       {/* Quick Actions */}
       <ConfigurableQuickActions hostname={hostname} />
+
+      {/* DBA Countdown */}
+      <DBACountdownWidget />
 
       {/* Tailscale Network */}
       <TailscaleWidget />

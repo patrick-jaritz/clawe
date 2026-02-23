@@ -600,6 +600,161 @@ app.get("/api/share/snapshot", async (req, res) => {
   }
 });
 
+// ── DBA Paper Progress ──────────────────────────────────────────────────────
+const DBA_PATH = path.join(process.env.HOME ?? "/Users/centrick", ".clawe", "dba-progress.json");
+
+type DBASection = { id: string; title: string; done: boolean };
+type DBAPaper = { id: string; title: string; deadline: string; sections: DBASection[] };
+type DBAProgress = { papers: DBAPaper[]; updatedAt: string };
+
+function defaultDBAProgress(): DBAProgress {
+  const sections = [
+    "Abstract", "Introduction", "Literature Review",
+    "Methodology", "Results", "Discussion", "Conclusion"
+  ];
+  return {
+    updatedAt: new Date().toISOString(),
+    papers: [
+      { id: "p1", title: "Paper 1", deadline: "2026-03-31", sections: sections.map((t, i) => ({ id: `p1-${i}`, title: t, done: false })) },
+      { id: "p2", title: "Paper 2", deadline: "2026-03-31", sections: sections.map((t, i) => ({ id: `p2-${i}`, title: t, done: false })) },
+      { id: "p3", title: "Paper 3", deadline: "2026-03-31", sections: sections.map((t, i) => ({ id: `p3-${i}`, title: t, done: false })) },
+    ],
+  };
+}
+
+function loadDBA(): DBAProgress {
+  try {
+    if (fs.existsSync(DBA_PATH)) return JSON.parse(fs.readFileSync(DBA_PATH, "utf8")) as DBAProgress;
+  } catch { /* silent */ }
+  return defaultDBAProgress();
+}
+
+function saveDBA(data: DBAProgress) {
+  const dir = path.dirname(DBA_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(DBA_PATH, JSON.stringify(data, null, 2));
+}
+
+app.get("/api/dba/progress", (_req, res) => res.json(loadDBA()));
+
+app.patch("/api/dba/progress", (req, res) => {
+  const data = loadDBA();
+  const { paperId, sectionId, done, paperTitle } = req.body as {
+    paperId?: string; sectionId?: string; done?: boolean; paperTitle?: string;
+  };
+  if (paperId && sectionId !== undefined && done !== undefined) {
+    const paper = data.papers.find((p) => p.id === paperId);
+    if (paper) {
+      const sec = paper.sections.find((s) => s.id === sectionId);
+      if (sec) sec.done = done;
+    }
+  }
+  if (paperId && paperTitle !== undefined) {
+    const paper = data.papers.find((p) => p.id === paperId);
+    if (paper) paper.title = paperTitle;
+  }
+  data.updatedAt = new Date().toISOString();
+  saveDBA(data);
+  res.json(data);
+});
+
+// ── Weekly Review ───────────────────────────────────────────────────────────
+app.get("/api/weekly-review", async (_req, res) => {
+  try {
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Count cron job runs from recent sessions (approximation via log scan)
+    let cronRunsTotal = 0;
+    let cronErrors = 0;
+    try {
+      const logs = execSync(
+        `grep -r "Cron\\|cron" /Users/centrick/.openclaw/logs/ 2>/dev/null | wc -l`,
+        { encoding: "utf8", timeout: 3000 }
+      ).trim();
+      cronRunsTotal = parseInt(logs) || 0;
+    } catch { /* ok */ }
+
+    // Count Intel chunks ingested this week
+    let intelChunks = 0;
+    try {
+      const { intelCount } = await import("./lib/lancedb.js");
+      intelChunks = await intelCount();
+    } catch { /* ok */ }
+
+    // Read daily logs for completed tasks
+    const dailyLogsDir = "/Users/centrick/clawd/aurel/daily/";
+    const completedTasks: string[] = [];
+    try {
+      const files = fs.readdirSync(dailyLogsDir)
+        .filter((f) => f.endsWith(".md"))
+        .sort()
+        .slice(-7);
+      for (const f of files) {
+        const content = fs.readFileSync(path.join(dailyLogsDir, f), "utf8");
+        const matches = content.match(/^[-•]\s+✅.+$/gm) ?? [];
+        completedTasks.push(...matches.map((m) => m.replace(/^[-•]\s+✅\s*/, "")));
+      }
+    } catch { /* ok */ }
+
+    // Memory stats
+    let memStats = "";
+    try {
+      memStats = execSync(
+        `node /Users/centrick/clawd/aurel/memory-system/cli.js stats 2>/dev/null`,
+        { encoding: "utf8", timeout: 5000 }
+      );
+    } catch { /* ok */ }
+
+    res.json({
+      weekOf: weekAgo.toISOString().slice(0, 10),
+      weekEnding: now.toISOString().slice(0, 10),
+      intelChunks,
+      completedTasks: completedTasks.slice(-20),
+      memStats,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── Notion sync status ──────────────────────────────────────────────────────
+const NOTION_SYNC_LOG = "/Users/centrick/clawd/aurel/logs/notion-sync.log";
+
+app.get("/api/notion/sync-status", (_req, res) => {
+  try {
+    let lastSync: string | null = null;
+    let lastStatus: "ok" | "error" = "ok";
+
+    if (fs.existsSync(NOTION_SYNC_LOG)) {
+      const lines = fs.readFileSync(NOTION_SYNC_LOG, "utf8").trim().split("\n").filter(Boolean);
+      const last = lines[lines.length - 1];
+      if (last) {
+        const tsMatch = last.match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/);
+        lastSync = tsMatch?.[0] ?? null;
+        lastStatus = last.toLowerCase().includes("error") ? "error" : "ok";
+      }
+    }
+
+    // Also check the process-state for Notion task mutation timestamps
+    res.json({ lastSync, lastStatus, logPath: NOTION_SYNC_LOG });
+  } catch {
+    res.json({ lastSync: null, lastStatus: "unknown" });
+  }
+});
+
+// Notion tasks are mutated — write sync timestamp
+app.post("/api/notion/sync-ping", (req, res) => {
+  const { status = "ok" } = req.body as { status?: string };
+  try {
+    const dir = path.dirname(NOTION_SYNC_LOG);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const line = `${new Date().toISOString()} status=${status}\n`;
+    fs.appendFileSync(NOTION_SYNC_LOG, line);
+  } catch { /* ok */ }
+  res.json({ ok: true });
+});
+
 // Tailscale device list
 app.get("/api/tailscale/status", (_req, res) => {
   try {

@@ -20,6 +20,60 @@ const logBuffers = new Map<string, string[]>();
 const logEmitters = new Map<string, EventEmitter>();
 
 // ---------------------------------------------------------------------------
+// Crash history — saved to ~/.clawe/crash-history.json
+// ---------------------------------------------------------------------------
+const CRASH_HISTORY_PATH = path.join(process.env.HOME ?? "/Users/centrick", ".clawe", "crash-history.json");
+type CrashEvent = { ts: number; code: number | null };
+let crashHistory: Record<string, CrashEvent[]> = {};
+
+function loadCrashHistory() {
+  try {
+    if (fs.existsSync(CRASH_HISTORY_PATH)) {
+      crashHistory = JSON.parse(fs.readFileSync(CRASH_HISTORY_PATH, "utf8"));
+    }
+  } catch { /* silent */ }
+}
+
+function recordCrash(id: string, code: number | null) {
+  if (!crashHistory[id]) crashHistory[id] = [];
+  crashHistory[id] = [{ ts: Date.now(), code }, ...crashHistory[id]].slice(0, 20);
+  try {
+    const dir = path.dirname(CRASH_HISTORY_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(CRASH_HISTORY_PATH, JSON.stringify(crashHistory, null, 2));
+  } catch { /* silent */ }
+}
+
+loadCrashHistory();
+
+// ---------------------------------------------------------------------------
+// Health check state (in-memory, refreshed every 30s)
+// ---------------------------------------------------------------------------
+type HealthStatus = { ok: boolean; lastChecked: number; latencyMs?: number };
+const healthStatus = new Map<string, HealthStatus>();
+
+function pingProject(id: string, port: number): Promise<void> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const req = http.get({ hostname: "127.0.0.1", port, path: "/", timeout: 4000 }, (res) => {
+      healthStatus.set(id, { ok: res.statusCode !== undefined && res.statusCode < 500, lastChecked: Date.now(), latencyMs: Date.now() - start });
+      res.resume();
+      resolve();
+    });
+    req.on("error", () => { healthStatus.set(id, { ok: false, lastChecked: Date.now() }); resolve(); });
+    req.on("timeout", () => { req.destroy(); healthStatus.set(id, { ok: false, lastChecked: Date.now() }); resolve(); });
+  });
+}
+
+// Background health check loop
+setInterval(() => {
+  for (const [id, pid] of runningProcesses) {
+    const project = PROJECTS.find((p) => p.id === id);
+    if (project) pingProject(id, project.port).catch(() => {});
+  }
+}, 30_000);
+
+// ---------------------------------------------------------------------------
 // Project notes — saved to ~/.clawe/project-notes.json
 // ---------------------------------------------------------------------------
 const NOTES_PATH = path.join(process.env.HOME ?? "/Users/centrick", ".clawe", "project-notes.json");
@@ -226,8 +280,10 @@ function spawnProject(id: string, project: ProjectConfig): void {
   });
   child.on('exit', (code) => {
     addLogLine(id, `Process exited with code ${code}`);
+    if (code !== 0 && code !== null) recordCrash(id, code);
     runningProcesses.delete(id);
     startTimes.delete(id);
+    healthStatus.delete(id);
     persistState();
     if (code !== 0 && autoRestartSettings[id]) {
       addLogLine(id, `Auto-restart enabled — restarting in 5s...`);
@@ -249,12 +305,16 @@ router.get("/", async (_req, res) => {
           ? await checkRunning(project.port)
           : false;
         
+        const health = healthStatus.get(project.id);
         return {
           ...project,
           running,
           startedAt: running ? (startTimes.get(project.id) ?? null) : null,
           notes: projectNotes[project.id] ?? "",
           autoRestart: autoRestartSettings[project.id] ?? false,
+          health: health ?? null,
+          crashCount: (crashHistory[project.id] ?? []).length,
+          lastCrash: (crashHistory[project.id] ?? [])[0] ?? null,
         };
       })
     );
@@ -419,6 +479,118 @@ router.post("/:id/stop", (req, res) => {
   } catch (err) {
     console.error("Error stopping project:", err);
     res.status(500).json({ error: "Failed to stop project" });
+  }
+});
+
+/**
+ * GET /api/projects/:id/crashes
+ */
+router.get("/:id/crashes", (req, res) => {
+  const { id } = req.params;
+  res.json({ crashes: crashHistory[id] ?? [], total: (crashHistory[id] ?? []).length });
+});
+
+/**
+ * POST /api/projects/:id/health-check
+ * Trigger an immediate health check
+ */
+router.post("/:id/health-check", async (req, res) => {
+  const { id } = req.params;
+  const project = PROJECTS.find((p) => p.id === id);
+  if (!project) { res.status(404).json({ error: "Not found" }); return; }
+  await pingProject(id, project.port);
+  res.json(healthStatus.get(id) ?? { ok: false, lastChecked: Date.now() });
+});
+
+/**
+ * POST /api/projects/:id/rebuild
+ * git pull + npm install + restart
+ */
+router.post("/:id/rebuild", (req, res) => {
+  const { id } = req.params;
+  const project = PROJECTS.find((p) => p.id === id);
+  if (!project) { res.status(404).json({ error: "Not found" }); return; }
+
+  // Stream rebuild logs via SSE
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  const send = (line: string) => res.write(`data: ${line}\n\n`);
+
+  const run = async () => {
+    try {
+      send("🔄 git pull...");
+      const { execSync: exec } = await import("child_process");
+      const gitOut = exec("git pull", { cwd: project.path, encoding: "utf8" }).trim();
+      send(gitOut || "(already up to date)");
+
+      send("📦 npm install...");
+      const npmOut = exec("npm install 2>&1", { cwd: project.path, encoding: "utf8", timeout: 120_000 }).trim();
+      for (const line of npmOut.split("\n").slice(-5)) send(line); // last 5 lines
+
+      // Stop running process if any
+      if (runningProcesses.has(id)) {
+        const pid = runningProcesses.get(id)!;
+        try { process.kill(-pid, "SIGTERM"); } catch { /* ok */ }
+        runningProcesses.delete(id);
+        startTimes.delete(id);
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+
+      send("🚀 Restarting...");
+      spawnProject(id, project);
+      send("✅ Done! Project restarted.");
+    } catch (err) {
+      send(`❌ Error: ${String(err)}`);
+    } finally {
+      res.end();
+    }
+  };
+
+  run();
+});
+
+/**
+ * GET /api/projects/:id/logs/search?q=term
+ */
+router.get("/:id/logs/search", (req, res) => {
+  const { id } = req.params;
+  const { q = "" } = req.query as { q?: string };
+  const buf = logBuffers.get(id) ?? [];
+  const term = q.toLowerCase();
+  const results = term ? buf.filter((l) => l.toLowerCase().includes(term)) : buf;
+  res.json({ results: results.slice(-200), total: results.length, query: q });
+});
+
+/**
+ * GET /api/projects/:id/env
+ * Returns masked .env contents
+ */
+router.get("/:id/env", (req, res) => {
+  const { id } = req.params;
+  const { reveal } = req.query as { reveal?: string };
+  const project = PROJECTS.find((p) => p.id === id);
+  if (!project) { res.status(404).json({ error: "Not found" }); return; }
+
+  const envPath = path.join(project.path, ".env");
+  if (!fs.existsSync(envPath)) { res.json({ vars: [], path: envPath, exists: false }); return; }
+
+  try {
+    const lines = fs.readFileSync(envPath, "utf8").split("\n");
+    const vars = lines
+      .filter((l) => l.includes("=") && !l.startsWith("#"))
+      .map((l) => {
+        const eqIdx = l.indexOf("=");
+        const key = l.slice(0, eqIdx).trim();
+        const rawVal = l.slice(eqIdx + 1).trim();
+        const isSensitive = /key|secret|token|pass|password|auth|api/i.test(key);
+        const value = (isSensitive && reveal !== "true") ? "•••••••••••" : rawVal;
+        return { key, value, masked: isSensitive && reveal !== "true" };
+      });
+    res.json({ vars, path: envPath, exists: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to read .env", details: String(err) });
   }
 });
 

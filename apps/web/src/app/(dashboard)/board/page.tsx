@@ -5,9 +5,28 @@ export const dynamic = "force-dynamic";
 import { useState } from "react";
 import { mutate } from "swr";
 import { cn } from "@clawe/ui/lib/utils";
-import { useTasks, updateTaskStatus, createNotionTask } from "@/lib/api/local";
+import { useTasks, updateTaskStatus, createNotionTask, useNotionSyncStatus } from "@/lib/api/local";
 import type { LocalTask } from "@/lib/api/local";
-import { Bell } from "lucide-react";
+import { Bell, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+
+function NotionSyncBadge() {
+  const { data } = useNotionSyncStatus();
+  if (!data?.lastSync) return null;
+
+  const lastSync = new Date(data.lastSync);
+  const minAgo = Math.floor((Date.now() - lastSync.getTime()) / 60000);
+  const label = minAgo < 1 ? "just now" : minAgo < 60 ? `${minAgo}m ago` : `${Math.floor(minAgo / 60)}h ago`;
+  const isError = data.lastStatus === "error";
+
+  return (
+    <div className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${isError ? "border-destructive/40 text-destructive" : "text-muted-foreground"}`}
+      title={`Notion last synced: ${lastSync.toLocaleString()}`}>
+      {isError ? <AlertCircle className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3 text-green-500" />}
+      <Clock className="h-3 w-3" />
+      <span className="hidden sm:inline">Notion</span> {label}
+    </div>
+  );
+}
 import { Button } from "@clawe/ui/components/button";
 import {
   ResizablePanelGroup,
@@ -211,6 +230,7 @@ const BoardPage = () => {
             <PageHeaderRow>
               <PageHeaderTitle>Board</PageHeaderTitle>
               <PageHeaderActions>
+                <NotionSyncBadge />
                 <NewTaskDialog />
                 <Button variant="outline" size="sm" onClick={handleOpenFeed}>
                   <Bell className="h-4 w-4" />

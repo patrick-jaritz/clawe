@@ -22,7 +22,11 @@ import {
   projectLogsUrl,
   saveProjectNotes,
   setProjectAutoRestart,
-  type Project 
+  rebuildProject,
+  searchProjectLogs,
+  getProjectEnv,
+  type Project,
+  type EnvVar,
 } from "@/lib/api/local";
 import { 
   Play, 
@@ -38,6 +42,13 @@ import {
   Search,
   StickyNote,
   RefreshCw,
+  AlertTriangle,
+  Activity,
+  GitBranch,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { Input } from "@clawe/ui/components/input";
 
@@ -69,6 +80,13 @@ const ProjectsPage = () => {
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
   const [notesExpanded, setNotesExpanded] = useState<Record<string, boolean>>({});
   const [togglingRestart, setTogglingRestart] = useState<string | null>(null);
+  const [rebuildLogs, setRebuildLogs] = useState<Record<string, string[]>>({});
+  const [rebuilding, setRebuilding] = useState<string | null>(null);
+  const [logSearch, setLogSearch] = useState<Record<string, string>>({});
+  const [logSearchResults, setLogSearchResults] = useState<Record<string, string[]>>({});
+  const [envData, setEnvData] = useState<Record<string, EnvVar[]>>({});
+  const [envExpanded, setEnvExpanded] = useState<Record<string, boolean>>({});
+  const [envRevealed, setEnvRevealed] = useState<Record<string, boolean>>({});
 
   // Auto-clear errors after 5 seconds
   useEffect(() => {
@@ -450,6 +468,21 @@ const ProjectsPage = () => {
                       <Terminal className="mr-1.5 h-3.5 w-3.5" />
                       Logs
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={rebuilding === project.id}
+                      onClick={() => {
+                        setRebuilding(project.id);
+                        setRebuildLogs((p) => ({ ...p, [project.id]: [] }));
+                        const es = rebuildProject(project.id);
+                        es.onmessage = (e) => setRebuildLogs((p) => ({ ...p, [project.id]: [...(p[project.id] ?? []), e.data].slice(-30) }));
+                        es.onerror = () => { es.close(); setRebuilding(null); mutate("/api/projects"); };
+                      }}
+                    >
+                      <GitBranch className="mr-1.5 h-3.5 w-3.5" />
+                      {rebuilding === project.id ? "Building..." : "Rebuild"}
+                    </Button>
                   </>
                 )}
               </>
@@ -476,6 +509,36 @@ const ProjectsPage = () => {
                   <div key={i}>{line}</div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Health + Crash status */}
+          {project.running && (
+            <div className="flex items-center gap-3 text-xs">
+              {project.health != null ? (
+                project.health.ok ? (
+                  <span className="flex items-center gap-1 text-green-600">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Healthy
+                    {project.health.latencyMs != null && (
+                      <span className="text-muted-foreground ml-1">{project.health.latencyMs}ms</span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-destructive">
+                    <XCircle className="h-3.5 w-3.5" /> Unhealthy
+                  </span>
+                )
+              ) : (
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  <Activity className="h-3.5 w-3.5" /> Checking...
+                </span>
+              )}
+              {(project.crashCount ?? 0) > 0 && (
+                <span className="flex items-center gap-1 text-orange-500">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {project.crashCount} crash{project.crashCount !== 1 ? "es" : ""}
+                </span>
+              )}
             </div>
           )}
 
@@ -536,6 +599,106 @@ const ProjectsPage = () => {
                   } catch { /* ignore */ }
                 }}
               />
+            )}
+          </div>
+          {/* Rebuild log output */}
+          {(rebuildLogs[project.id] ?? []).length > 0 && (
+            <div className="rounded-md bg-black/80 p-3 font-mono text-xs text-green-400 space-y-0.5">
+              {(rebuildLogs[project.id] ?? []).map((l, i) => <div key={i}>{l}</div>)}
+            </div>
+          )}
+
+          {/* Log search */}
+          {project.running && (
+            <div className="border-t pt-2 space-y-1.5">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <input
+                    className="w-full rounded border bg-background pl-7 pr-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="Search logs..."
+                    value={logSearch[project.id] ?? ""}
+                    onChange={(e) => setLogSearch((p) => ({ ...p, [project.id]: e.target.value }))}
+                    onKeyDown={async (e) => {
+                      if (e.key === "Enter") {
+                        try {
+                          const r = await searchProjectLogs(project.id, logSearch[project.id] ?? "");
+                          setLogSearchResults((p) => ({ ...p, [project.id]: r.results }));
+                        } catch { /* ok */ }
+                      }
+                    }}
+                  />
+                </div>
+                <button
+                  className="text-xs text-muted-foreground hover:text-foreground px-2"
+                  onClick={async () => {
+                    try {
+                      const r = await searchProjectLogs(project.id, logSearch[project.id] ?? "");
+                      setLogSearchResults((p) => ({ ...p, [project.id]: r.results }));
+                    } catch { /* ok */ }
+                  }}
+                >Search</button>
+              </div>
+              {(logSearchResults[project.id] ?? []).length > 0 && (
+                <div className="rounded bg-muted p-2 font-mono text-xs space-y-0.5 max-h-32 overflow-auto">
+                  {(logSearchResults[project.id] ?? []).map((l, i) => <div key={i}>{l}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* .env viewer */}
+          <div className="border-t pt-2">
+            <button
+              onClick={async () => {
+                const next = !envExpanded[project.id];
+                setEnvExpanded((p) => ({ ...p, [project.id]: next }));
+                if (next && !envData[project.id]) {
+                  try {
+                    const r = await getProjectEnv(project.id, envRevealed[project.id]);
+                    setEnvData((p) => ({ ...p, [project.id]: r.vars }));
+                  } catch { /* ok */ }
+                }
+              }}
+              className="flex w-full items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              .env
+              {(envData[project.id] ?? []).length > 0 && !envExpanded[project.id] && (
+                <span className="text-muted-foreground">{(envData[project.id] ?? []).length} vars</span>
+              )}
+            </button>
+            {envExpanded[project.id] && (
+              <div className="mt-2 space-y-1">
+                <div className="flex justify-end">
+                  <button
+                    className="text-xs text-muted-foreground flex items-center gap-1 hover:text-foreground"
+                    onClick={async () => {
+                      const next = !envRevealed[project.id];
+                      setEnvRevealed((p) => ({ ...p, [project.id]: next }));
+                      try {
+                        const r = await getProjectEnv(project.id, next);
+                        setEnvData((p) => ({ ...p, [project.id]: r.vars }));
+                      } catch { /* ok */ }
+                    }}
+                  >
+                    {envRevealed[project.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                    {envRevealed[project.id] ? "Hide" : "Reveal"}
+                  </button>
+                </div>
+                {(envData[project.id] ?? []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No .env file found</p>
+                ) : (
+                  <div className="rounded border font-mono text-xs overflow-hidden">
+                    {(envData[project.id] ?? []).map((v) => (
+                      <div key={v.key} className="flex gap-2 px-2 py-1 odd:bg-muted/30">
+                        <span className="text-blue-600 dark:text-blue-400 flex-shrink-0">{v.key}</span>
+                        <span className="text-muted-foreground truncate">{v.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

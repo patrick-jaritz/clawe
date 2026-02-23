@@ -13,6 +13,7 @@ import { ChatPanel } from "@dashboard/chat-panel";
 import { useRequireOnboarding } from "@/hooks/use-onboarding-guard";
 import { CommandPalette } from "@/components/command-palette";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+import { KeyboardCheatsheet } from "@/components/keyboard-cheatsheet";
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -78,6 +79,7 @@ const DashboardLayout = ({ children, header }: DashboardLayoutProps) => {
           </SidebarInset>
           <ChatPanel />
           <CommandPalette />
+          <KeyboardCheatsheet />
           <MobileBottomNav />
         </SidebarProvider>
       </ChatPanelProvider>

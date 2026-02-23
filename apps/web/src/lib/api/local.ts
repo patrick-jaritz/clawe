@@ -177,6 +177,9 @@ export async function getIntelChunk(id: string): Promise<FullIntelChunk> {
   return res.json();
 }
 
+export type ProjectHealth = { ok: boolean; lastChecked: number; latencyMs?: number };
+export type CrashEvent = { ts: number; code: number | null };
+
 export type Project = {
   id: string;
   name: string;
@@ -191,6 +194,9 @@ export type Project = {
   category: 'byl' | 'tools' | 'intelligence' | 'external';
   notes?: string;
   autoRestart?: boolean;
+  health?: ProjectHealth | null;
+  crashCount?: number;
+  lastCrash?: CrashEvent | null;
 };
 
 export type ProjectsResponse = {
@@ -335,6 +341,79 @@ export async function generateShareToken(): Promise<string> {
 
 export async function revokeShareToken(): Promise<void> {
   await fetch(`${API_BASE}/api/share/token`, { method: "DELETE" });
+}
+
+// ── Rebuild ───────────────────────────────────────────────────────────────────
+
+export function rebuildProject(id: string): EventSource {
+  return new EventSource(`${API_BASE}/api/projects/${id}/rebuild`);
+}
+
+// ── Log search ────────────────────────────────────────────────────────────────
+
+export type LogSearchResult = { results: string[]; total: number; query: string };
+
+export async function searchProjectLogs(id: string, q: string): Promise<LogSearchResult> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/logs/search?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error("Log search failed");
+  return res.json() as Promise<LogSearchResult>;
+}
+
+// ── .env viewer ───────────────────────────────────────────────────────────────
+
+export type EnvVar = { key: string; value: string; masked: boolean };
+export type EnvResult = { vars: EnvVar[]; path: string; exists: boolean };
+
+export async function getProjectEnv(id: string, reveal = false): Promise<EnvResult> {
+  const res = await fetch(`${API_BASE}/api/projects/${id}/env?reveal=${reveal}`);
+  if (!res.ok) throw new Error("Failed to fetch .env");
+  return res.json() as Promise<EnvResult>;
+}
+
+// ── DBA Progress ──────────────────────────────────────────────────────────────
+
+export type DBASection = { id: string; title: string; done: boolean };
+export type DBAPaper = { id: string; title: string; deadline: string; sections: DBASection[] };
+export type DBAProgress = { papers: DBAPaper[]; updatedAt: string };
+
+export function useDBAProgress() {
+  return useSWR<DBAProgress>("/api/dba/progress", fetcher, { revalidateOnFocus: false });
+}
+
+export async function patchDBAProgress(update: {
+  paperId?: string; sectionId?: string; done?: boolean; paperTitle?: string;
+}): Promise<DBAProgress> {
+  const res = await fetch(`${API_BASE}/api/dba/progress`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  if (!res.ok) throw new Error("Failed to update DBA progress");
+  return res.json() as Promise<DBAProgress>;
+}
+
+// ── Weekly Review ─────────────────────────────────────────────────────────────
+
+export type WeeklyReview = {
+  weekOf: string;
+  weekEnding: string;
+  intelChunks: number;
+  completedTasks: string[];
+  memStats: string;
+};
+
+export function useWeeklyReview() {
+  return useSWR<WeeklyReview>("/api/weekly-review", fetcher, { revalidateOnFocus: false });
+}
+
+// ── Notion sync status ────────────────────────────────────────────────────────
+
+export type NotionSyncStatus = { lastSync: string | null; lastStatus: string };
+
+export function useNotionSyncStatus() {
+  return useSWR<NotionSyncStatus>("/api/notion/sync-status", fetcher, {
+    refreshInterval: 60_000,
+  });
 }
 
 export type SystemHealth = {
