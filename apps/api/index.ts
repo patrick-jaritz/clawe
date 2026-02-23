@@ -1232,17 +1232,7 @@ app.get("/api/skills", (_req, res) => {
   res.json({ skills, total: skills.length });
 });
 
-app.post("/api/agents/:agentId/heartbeat", (req, res) => {
-  const { agentId } = req.params;
-  if (!["soren", "aurel"].includes(agentId)) { res.status(403).json({ error: "Unknown agent" }); return; }
-  const statusPath = agentId === "soren"
-    ? path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json")
-    : path.join(process.env.HOME ?? "/Users/centrick", "clawd/aurel/status/aurel.json");
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const data = { ...body, agent: agentId, timestamp: new Date().toISOString(), health: body.health ?? "green" };
-  fs.writeFileSync(statusPath, JSON.stringify(data, null, 2));
-  res.json({ ok: true, agent: agentId, updatedAt: data.timestamp });
-});
+// heartbeat — see POST /api/agents/:id/heartbeat (SSE version below)
 
 // ---------------------------------------------------------------------------
 // FEATURE 2: API Key Vault
@@ -1967,54 +1957,7 @@ app.get("/api/machines", (_req, res) => {
   res.json({ machines });
 });
 
-// ---------------------------------------------------------------------------
-// GET /api/crons
-// ---------------------------------------------------------------------------
-
-app.get("/api/crons", (_req, res) => {
-  const cronStateFile = path.join(
-    process.env.HOME ?? "/Users/centrick",
-    "clawd/crons/state.json",
-  );
-
-  try {
-    if (fs.existsSync(cronStateFile)) {
-      const raw = fs.readFileSync(cronStateFile, "utf8");
-      res.json(JSON.parse(raw));
-      return;
-    }
-
-    // Fallback: scan cron log files in ~/clawd/crons/logs/
-    const logsDir = path.join(process.env.HOME ?? "/Users/centrick", "clawd/crons/logs");
-    if (!fs.existsSync(logsDir)) {
-      res.json({ crons: [], lastUpdated: null });
-      return;
-    }
-
-    const logFiles = fs.readdirSync(logsDir).filter((f) => f.endsWith(".log"));
-    const crons = logFiles.map((file) => {
-      const content = fs.readFileSync(path.join(logsDir, file), "utf8");
-      const lines = content.split("\n").filter(Boolean);
-      const lastLine = lines[lines.length - 1] ?? "";
-      const errorLines = lines.filter((l) => l.toLowerCase().includes("error") || l.toLowerCase().includes("fail"));
-
-      return {
-        id: file.replace(".log", ""),
-        name: file.replace(".log", "").replace(/-/g, " "),
-        lastRun: null,
-        status: errorLines.length > 0 ? "error" : "ok",
-        errorCount: errorLines.length,
-        lastError: errorLines[errorLines.length - 1] ?? null,
-        lastOutput: lastLine,
-      };
-    });
-
-    res.json({ crons, lastUpdated: new Date().toISOString() });
-  } catch (err) {
-    console.error("Cron state error:", err);
-    res.json({ crons: [], lastUpdated: null });
-  }
-});
+// /api/crons — see GET /api/crons above (OpenClaw cron reader)
 
 // ---------------------------------------------------------------------------
 // GET /api/agents/:id/profile — IDENTITY.md + SOUL.md for known agents
@@ -2114,51 +2057,7 @@ app.get("/api/coordination/feed", (_req, res) => {
   res.json({ messages: messages.slice(0, 20) });
 });
 
-// ---------------------------------------------------------------------------
-// PATCH /api/tasks/:id/status  (Notion write-back)
-// ---------------------------------------------------------------------------
-
-app.patch("/api/tasks/:id/status", express.json(), async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body as { status: string };
-
-  const notionKey = getNotionKey();
-  if (!notionKey) {
-    res.status(500).json({ error: "NOTION_API_KEY not found" });
-    return;
-  }
-
-  // Map internal status → Notion status name
-  const notionStatusMap: Record<string, string> = {
-    inbox: "Todo",
-    assigned: "Todo",
-    in_progress: "In Progress",
-    review: "Blocked",
-    done: "Done",
-  };
-
-  const notionStatus = notionStatusMap[status];
-  if (!notionStatus) {
-    res.status(400).json({ error: `Unknown status: ${status}` });
-    return;
-  }
-
-  try {
-    await notionRequest(
-      `/v1/pages/${id}`,
-      notionKey,
-      {
-        properties: {
-          Status: { status: { name: notionStatus } },
-        },
-      },
-    );
-    res.json({ ok: true, id, status, notionStatus });
-  } catch (err) {
-    console.error("Notion status update error:", err);
-    res.status(500).json({ error: "Failed to update Notion task" });
-  }
-});
+// PATCH /api/tasks/:id/status — see original endpoint above
 
 // ---------------------------------------------------------------------------
 // GET /api/repos  (watchlist — Notion DB primary, local JSON fallback)
