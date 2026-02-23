@@ -54,7 +54,7 @@ const SidebarNavContent = () => {
   const navItems: NavItem[] = [
     {
       title: "Home",
-      url: "/agents",
+      url: "/",
       icon: Home,
     },
     {
@@ -87,6 +87,7 @@ const SidebarNavContent = () => {
       title: "Crons",
       url: "/crons",
       icon: Timer,
+      badge: cronErrorCount > 0 ? String(cronErrorCount) : undefined,
     },
     {
       title: "Memory",
@@ -117,15 +118,11 @@ const SidebarNavContent = () => {
       title: "Weekly Review",
       url: "/weekly-review",
       icon: BarChart2,
+    },
+    {
       title: "Watchlist",
       url: "/repos",
       icon: BookOpen,
-    },
-    {
-      title: "Crons",
-      url: "/crons",
-      icon: Timer,
-      badge: cronErrorCount > 0 ? String(cronErrorCount) : undefined,
     },
     {
       title: "Settings",
