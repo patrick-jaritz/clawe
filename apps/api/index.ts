@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import https from "https";
 import http from "http";
+import net from "net";
 import intelRouter from "./routes/intel.js";
 import projectsRouter from "./routes/projects.js";
 
@@ -1210,20 +1211,30 @@ async function buildFleetStatus(): Promise<FleetStatus> {
   ];
   const agentsOnline = agentItems.filter(a => a.status === "online").length;
 
-  // --- Gateway ---
+  // --- Gateway — check LaunchAgent plist + port (avoids slow `openclaw gateway status`) ---
   let gatewayRunning = false;
-  let gatewayMode = "unknown";
-  let gatewayPort = "";
+  let gatewayMode = "LaunchAgent";
+  let gatewayPort = "18789";
   const gatewayWarnings: string[] = [];
   try {
-    const raw = execSync("openclaw gateway status 2>/dev/null", { encoding: "utf8", timeout: 4000 });
-    gatewayRunning = raw.includes("LaunchAgent") || raw.includes("loaded") || raw.includes("running");
-    const portM = raw.match(/port[=:\s]+(\d+)/i);
-    gatewayPort = portM ? portM[1] : "18789";
-    const modeM = raw.match(/Service:\s*(.+)/);
-    gatewayMode = modeM ? modeM[1].trim() : "LaunchAgent";
-    const warnLines = raw.split("\n").filter(l => l.toLowerCase().includes("warn") || l.toLowerCase().includes("skipped") || l.toLowerCase().includes("error"));
-    gatewayWarnings.push(...warnLines.map(l => l.trim()).filter(Boolean).slice(0, 3));
+    // Check if LaunchAgent plist is loaded
+    const plistPath = path.join(process.env.HOME ?? "/Users/centrick", "Library/LaunchAgents/ai.openclaw.gateway.plist");
+    const plistExists = fs.existsSync(plistPath);
+    // Check if port 18789 is listening
+    const portListening = await new Promise<boolean>((resolve) => {
+      const sock = new net.Socket();
+      sock.setTimeout(800);
+      sock.on("connect", () => { sock.destroy(); resolve(true); });
+      sock.on("error", () => resolve(false));
+      sock.on("timeout", () => { sock.destroy(); resolve(false); });
+      sock.connect(18789, "127.0.0.1");
+    });
+    gatewayRunning = plistExists && portListening;
+    // Read port from env config if available
+    try {
+      const envPort = execSync("launchctl getenv OPENCLAW_GATEWAY_PORT 2>/dev/null", { encoding: "utf8", timeout: 1000 }).trim();
+      if (envPort) gatewayPort = envPort;
+    } catch { /* use default */ }
   } catch { /* leave defaults */ }
 
   // --- Memory stats ---
@@ -1294,6 +1305,8 @@ async function buildFleetStatus(): Promise<FleetStatus> {
 
 app.get("/api/fleet/status", async (_req, res) => {
   const FLEET_TTL = 3 * 60 * 1000; // 3 minutes
+  // If cron cache isn't warm yet, trigger a refresh before building fleet status
+  if (cronCache.updatedAt === 0) refreshCronCache();
   if (fleetCache && Date.now() - fleetCacheAt < FLEET_TTL) {
     res.json({ ...fleetCache, cached: true });
     return;
@@ -1307,6 +1320,12 @@ app.get("/api/fleet/status", async (_req, res) => {
     console.error("Fleet status error:", err);
     res.status(500).json({ error: "Failed to build fleet status" });
   }
+});
+
+app.post("/api/fleet/refresh", (_req, res) => {
+  fleetCache = null;
+  fleetCacheAt = 0;
+  res.json({ ok: true, message: "Fleet cache cleared — next GET will rebuild" });
 });
 
 // ---------------------------------------------------------------------------

@@ -26,7 +26,6 @@ import {
   Brain,
 } from "lucide-react";
 import { useMemo } from "react";
-import { useSWRConfig } from "swr";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -84,7 +83,6 @@ function AgentRow({ agent }: { agent: { id: string; name: string; emoji: string;
 
 export default function FleetPage() {
   const { data, error, isLoading, mutate } = useFleetStatus();
-  const { mutate: globalMutate } = useSWRConfig();
 
   const updatedLabel = useMemo(() => {
     if (!data?.updatedAt) return "";
@@ -92,7 +90,8 @@ export default function FleetPage() {
     return m < 1 ? "just now" : `${m}m ago`;
   }, [data?.updatedAt]);
 
-  function refresh() {
+  async function refresh() {
+    await fetch("/api/fleet/refresh", { method: "POST" });
     void mutate();
   }
 
