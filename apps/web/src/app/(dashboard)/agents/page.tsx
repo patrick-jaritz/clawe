@@ -44,6 +44,13 @@ const formatLastSeen = (timestamp?: number): string => {
   return new Date(timestamp).toLocaleDateString();
 };
 
+const healthDotColors: Record<string, string> = {
+  green: "bg-emerald-500",
+  yellow: "bg-amber-400",
+  red: "bg-red-500",
+  offline: "bg-gray-400",
+};
+
 const AgentsPage = () => {
   const { data: agents } = useAgents();
 
@@ -75,45 +82,90 @@ const AgentsPage = () => {
               {agents.map((agent) => {
                 const status = deriveStatus(agent);
                 const config = statusConfig[status] ?? statusConfig.offline;
+                const healthDot = healthDotColors[agent.health ?? status] ?? healthDotColors.offline;
+                const hasBlockers = (agent.blockers?.length ?? 0) > 0;
+                const hasAttention = agent.needsAttention && (
+                  Array.isArray(agent.needsAttention)
+                    ? agent.needsAttention.length > 0
+                    : true
+                );
+                const completedCount = agent.completedToday?.length ?? 0;
+                const activeFocus = agent.activeFocus ?? agent.currentActivity;
 
                 return (
                   <div
                     key={agent._id}
-                    className="flex w-52 flex-col rounded-lg border p-4"
+                    className="flex w-72 flex-col rounded-lg border p-4"
                   >
+                    {/* Header row */}
                     <div className="mb-3 flex items-center justify-between">
-                      <span className="text-3xl">{agent.emoji}</span>
-                      {status === "offline" ? (
-                        <Badge variant="outline">{config.label}</Badge>
-                      ) : (
-                        <Badge
-                          variant="secondary"
-                          className={`${config.bgColor} ${config.textColor}`}
-                        >
-                          <span
-                            className={`mr-1.5 h-1.5 w-1.5 rounded-full ${config.dotColor}`}
-                          />
-                          {config.label}
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-3xl">{agent.emoji}</span>
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${healthDot}`}
+                          title={`Health: ${agent.health ?? status}`}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {completedCount > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            ✓ {completedCount} today
+                          </Badge>
+                        )}
+                        {status === "offline" ? (
+                          <Badge variant="outline">{config.label}</Badge>
+                        ) : (
+                          <Badge
+                            variant="secondary"
+                            className={`${config.bgColor} ${config.textColor}`}
+                          >
+                            <span
+                              className={`mr-1.5 h-1.5 w-1.5 rounded-full ${config.dotColor}`}
+                            />
+                            {config.label}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
 
-                    <h3 className="mb-1 font-medium">{agent.name}</h3>
-                    <p className="text-muted-foreground text-sm">
-                      {agent.role}
-                    </p>
+                    <h3 className="mb-0.5 font-medium">{agent.name}</h3>
+                    <p className="text-muted-foreground text-sm">{agent.role}</p>
 
-                    <div className="mt-auto pt-4">
-                      {agent.currentActivity ? (
-                        <p className="truncate text-xs">
-                          <span className="text-muted-foreground">Task: </span>
-                          {agent.currentActivity}
+                    {/* Active focus */}
+                    {activeFocus && (
+                      <p className="text-muted-foreground mt-2 truncate text-xs italic">
+                        {activeFocus}
+                      </p>
+                    )}
+
+                    {/* Blockers warning */}
+                    {hasBlockers && (
+                      <div className="mt-2 rounded-md bg-amber-50 px-2 py-1 dark:bg-amber-900/20">
+                        <p className="truncate text-xs text-amber-700 dark:text-amber-400">
+                          ⚠ {agent.blockers![0]}
+                          {agent.blockers!.length > 1 && ` +${agent.blockers!.length - 1} more`}
                         </p>
-                      ) : (
-                        <p className="text-muted-foreground text-xs">
-                          Last seen: {formatLastSeen(agent.lastHeartbeat)}
+                      </div>
+                    )}
+
+                    {/* Needs attention banner */}
+                    {hasAttention && (
+                      <div className="mt-2 rounded-md bg-red-50 px-2 py-1 dark:bg-red-900/20">
+                        <p className="text-xs font-medium text-red-700 dark:text-red-400">
+                          🔴 Needs attention
                         </p>
-                      )}
+                        {Array.isArray(agent.needsAttention) && agent.needsAttention.length > 0 && (
+                          <p className="mt-0.5 truncate text-xs text-red-600 dark:text-red-300">
+                            {agent.needsAttention[0]}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="mt-auto pt-3">
+                      <p className="text-muted-foreground text-xs">
+                        Last seen: {formatLastSeen(agent.lastHeartbeat)}
+                      </p>
                     </div>
                   </div>
                 );

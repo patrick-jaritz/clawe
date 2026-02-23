@@ -17,7 +17,14 @@ export type LocalAgent = {
   emoji: string;
   sessionKey: string;
   status: "online" | "offline";
+  health?: "green" | "yellow" | "red" | "offline";
   currentActivity: string | null;
+  activeFocus?: string | null;
+  activeTasks?: string[];
+  completedToday?: string[];
+  blockers?: string[];
+  needsAttention?: boolean | string[];
+  notes?: string;
   lastHeartbeat: number;
 };
 
