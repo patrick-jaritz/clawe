@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@clawe/ui/components/card";
+import { Button } from "@clawe/ui/components/button";
+import { Input } from "@clawe/ui/components/input";
+import { Badge } from "@clawe/ui/components/badge";
 import { useRepos, type WatchlistRepo } from "@/lib/api/local";
 import {
   ExternalLink,
@@ -18,7 +18,7 @@ import {
   Eye,
   Filter,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@clawe/ui/lib/utils";
 
 // Category → emoji mapping
 const categoryEmoji: Record<string, string> = {
