@@ -1535,6 +1535,15 @@ async function buildFleetStatus(): Promise<FleetStatus> {
   const hasYellow = cronErrors > 0 || agentsOnline < agentItems.length || connectivity.some(c => !c.ok);
   const overall: "green" | "yellow" | "red" = hasRed ? "red" : hasYellow ? "yellow" : "green";
 
+  // --- LanceDB chunk count (live, not hardcoded) ---
+  let lanceChunks = 0;
+  if (lanceDbOk) {
+    try {
+      const { intelCount: getChunks } = await import("./lib/lancedb.js");
+      lanceChunks = await getChunks();
+    } catch { lanceChunks = 0; }
+  }
+
   return {
     overall,
     updatedAt: Date.now(),
@@ -1546,7 +1555,7 @@ async function buildFleetStatus(): Promise<FleetStatus> {
       decisions: memDecisions + ((readJsonFile(path.join(process.env.HOME ?? "/Users/centrick", "clawd/coordination/status/soren.json"))?.decisions as unknown[] | undefined)?.length ?? 0),
       checkpoints: memCheckpoints,
     },
-    services: { api: true, qdrant: qdrantOk, lancedb: lanceDbOk, chunks: 0 },
+    services: { api: true, qdrant: qdrantOk, lancedb: lanceDbOk, chunks: lanceChunks },
     connectivity,
   };
 }
