@@ -81,6 +81,7 @@ const sourceIcons: Record<string, string> = {
   twitter: "🐦",
   github: "🐙",
   manual: "✏️",
+  "knowledge-pipeline": "🧠",
 };
 
 const sourceLabels: Record<string, string> = {
@@ -92,6 +93,7 @@ const sourceLabels: Record<string, string> = {
   twitter: "Twitter",
   github: "GitHub",
   manual: "Manual",
+  "knowledge-pipeline": "Søren",
 };
 
 function formatRelativeTime(isoDate: string | null): string {
@@ -147,6 +149,7 @@ type ChatMessage = {
 const sourceEmojis: Record<string, string> = {
   gmail: "📧", rss: "📡", reddit: "🟠", hn: "🔶",
   twitter: "🐦", github: "🐙", manual: "✏️",
+  "knowledge-pipeline": "🧠",
 };
 
 const AskMode = () => {
@@ -998,6 +1001,9 @@ const IntelligencePage = () => {
                       </SelectItem>
                       <SelectItem value="github">
                         {sourceIcons.github} GitHub
+                      </SelectItem>
+                      <SelectItem value="knowledge-pipeline">
+                        {sourceIcons["knowledge-pipeline"]} Søren (Knowledge Pipeline)
                       </SelectItem>
                     </SelectContent>
                   </Select>
