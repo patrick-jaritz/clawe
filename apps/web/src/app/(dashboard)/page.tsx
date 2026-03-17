@@ -39,10 +39,12 @@ import {
   useAgents,
   useAgentSSE,
   useDBAProgress,
+  useSessions,
   updateTaskStatus,
   askIntel,
   generateDailyDigest,
   type LocalTask,
+  type SessionItem,
 } from "@/lib/api/local";
 import { cn } from "@clawe/ui/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -464,6 +466,76 @@ function QuickAsk() {
   );
 }
 
+// ── Active Processes ──────────────────────────────────────────────────────────
+
+function ActiveProcessesCard() {
+  const { data } = useSessions();
+
+  const active = React.useMemo(() => {
+    if (!data?.sessions) return [];
+    const now = Date.now();
+    const THRESHOLD = 30 * 60 * 1000;
+    return data.sessions.filter((s) => {
+      if (now - s.updatedAt >= THRESHOLD) return false;
+      // Exclude Soren
+      const owner = (s.owner ?? "").toLowerCase();
+      if (owner === "soren" || s.key.includes("soren")) return false;
+      // Skip cron run children
+      if (s.key.includes(":run:")) return false;
+      return true;
+    });
+  }, [data]);
+
+  if (active.length === 0) return null;
+
+  const crons = active.filter((s) => s.kind === "cron").length;
+  const subagents = active.filter((s) => s.kind === "subagent").length;
+  const chats = active.filter((s) => s.kind === "direct" || s.kind === "group").length;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Zap className="h-4 w-4 text-emerald-500" />
+            Active Processes
+            <Badge variant="secondary" className="text-[10px] h-5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+              {active.length} running
+            </Badge>
+          </CardTitle>
+          <Link href="/sessions">
+            <Button variant="ghost" size="sm" className="text-xs h-7">All sessions →</Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex gap-4 mb-3 text-xs text-muted-foreground">
+          {crons > 0 && <span>⏱ {crons} cron{crons !== 1 ? "s" : ""}</span>}
+          {subagents > 0 && <span>🤖 {subagents} sub-agent{subagents !== 1 ? "s" : ""}</span>}
+          {chats > 0 && <span>💬 {chats} chat{chats !== 1 ? "s" : ""}</span>}
+        </div>
+        <div className="divide-y">
+          {active.slice(0, 8).map((s) => (
+            <div key={s.key} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+              <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{s.origin || s.label}</p>
+                <p className="text-xs text-muted-foreground">
+                  {s.kind} · {(s.model ?? "").split("/").pop()} · {s.ageLabel}
+                </p>
+              </div>
+              {s.aborted && <span className="text-xs text-red-500">⚠</span>}
+            </div>
+          ))}
+          {active.length > 8 && (
+            <p className="pt-2 text-xs text-muted-foreground">+{active.length - 8} more</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Home Page ─────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -524,6 +596,9 @@ export default function HomePage() {
 
       {/* Situation strip */}
       <SituationStrip />
+
+      {/* Active Processes */}
+      <ActiveProcessesCard />
 
       {/* Today's Focus + Intel side by side on large screens */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">

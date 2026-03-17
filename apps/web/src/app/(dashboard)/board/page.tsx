@@ -47,6 +47,7 @@ import {
 import { LiveFeed, LiveFeedTitle } from "@/components/live-feed";
 import { useDrawer } from "@/providers/drawer-provider";
 import { AgentsPanel } from "./_components/agents-panel";
+import { ProcessTracker } from "./_components/process-tracker";
 import { NewTaskDialog } from "./_components/new-task-dialog";
 
 // Map priority to Kanban format
@@ -214,11 +215,18 @@ const BoardPage = () => {
         onResize={handlePanelResize}
         className="hidden md:block"
       >
-        <AgentsPanel
-          collapsed={isCollapsed}
-          selectedAgentIds={selectedAgentIds}
-          onSelectionChange={setSelectedAgentIds}
-        />
+        <div className="flex h-full flex-col">
+          <AgentsPanel
+            className="flex-1 min-h-0"
+            collapsed={isCollapsed}
+            selectedAgentIds={selectedAgentIds}
+            onSelectionChange={setSelectedAgentIds}
+          />
+          <ProcessTracker
+            className="border-t max-h-[45%]"
+            collapsed={isCollapsed}
+          />
+        </div>
       </ResizablePanel>
 
       <ResizableHandle className="hover:bg-border hidden w-px bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 md:flex" />

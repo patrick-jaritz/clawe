@@ -784,7 +784,7 @@ export interface SessionItem {
   key: string; label: string; kind: "direct" | "group" | "cron" | "subagent";
   model: string; modelProvider: string; updatedAt: number; ageLabel: string;
   contextTokens: number; totalTokens: number; inputTokens: number; outputTokens: number;
-  aborted: boolean; origin: string;
+  aborted: boolean; origin: string; owner?: string;
 }
 export interface SessionsData { total: number; sessions: SessionItem[]; modelSummary: Record<string, number> }
 
